@@ -846,9 +846,9 @@ enum ProcessClassifier {
 
     // 按路径缓存 bid / 图标，避免反复 Bundle(url:) 与 NSWorkspace 全局缓存膨胀
     private static let bidCacheLock = NSLock()
-    private static var bidCache: [String: String?] = [:]
+    nonisolated(unsafe) private static var bidCache: [String: String?] = [:]
     private static let bidCacheLimit = 512
-    private static let iconCache: NSCache<NSString, NSImage> = {
+    nonisolated(unsafe) private static let iconCache: NSCache<NSString, NSImage> = {
         let c = NSCache<NSString, NSImage>()
         c.countLimit = 256
         c.totalCostLimit = 8 * 1024 * 1024

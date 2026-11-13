@@ -7,15 +7,15 @@ name: SwiftInsight
 options:
   bundleIdPrefix: me.whynbnb
   deploymentTarget:
-    macOS: "14.0"
+    macOS: "15.0"
   createIntermediateGroups: true
   groupSortPosition: top
-  xcodeVersion: "15.0"
+  xcodeVersion: "16.0"
 
 settings:
   base:
-    SWIFT_VERSION: "5.9"
-    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
     ALWAYS_SEARCH_USER_PATHS: NO
     CLANG_ENABLE_MODULES: YES
     ENABLE_HARDENED_RUNTIME: YES
@@ -62,7 +62,7 @@ targets:
         CURRENT_PROJECT_VERSION: "2"
         INFOPLIST_KEY_CFBundleDisplayName: SwiftInsight
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
-        INFOPLIST_KEY_LSMinimumSystemVersion: "14.0"
+        INFOPLIST_KEY_LSMinimumSystemVersion: "15.0"
         # 需要 Dock + 主窗口；菜单栏定位依赖 AppDelegate 内 SystemMonitor 路径
         INFOPLIST_KEY_LSUIElement: NO
         INFOPLIST_KEY_NSHighResolutionCapable: YES

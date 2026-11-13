@@ -1095,7 +1095,8 @@ private enum ProcessSampler {
         var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
         let ret = proc_pidpath(pid, &buffer, UInt32(buffer.count))
         if ret > 0 {
-            return String(cString: buffer)
+            let bytes = buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
+            return String(decoding: bytes, as: UTF8.self)
         }
         return ""
     }

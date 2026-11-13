@@ -91,8 +91,8 @@ macOS **活动监视器替代应用**（Swift / SwiftUI）。
 
 ## 环境要求
 
-- macOS **14+**  
-- Xcode **15+**（或带 macOS SDK 的 Swift 5.9+）  
+- macOS **15+**  
+- Xcode **16+** / Swift **6.0+**（启用严格并发检查）  
 - 可选：[XcodeGen](https://github.com/yonaskolb/XcodeGen)（修改 `project.yml` 后重新生成工程）  
 
 ---

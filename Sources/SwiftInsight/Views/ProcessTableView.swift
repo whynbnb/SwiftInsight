@@ -144,6 +144,7 @@ private struct ProcessNSTable: NSViewRepresentable {
         context.coordinator.apply(rows: rows, selectedPID: selectedPID)
     }
 
+    @MainActor
     final class Coordinator: NSObject, NSTableViewDelegate, NSTableViewDataSource {
         struct ColumnDef {
             let id: NSUserInterfaceItemIdentifier
@@ -213,7 +214,7 @@ private struct ProcessNSTable: NSViewRepresentable {
                 applyBlock()
             } else {
                 isApplying = true
-                DispatchQueue.main.async(execute: applyBlock)
+                Task { @MainActor in applyBlock() }
             }
         }
 

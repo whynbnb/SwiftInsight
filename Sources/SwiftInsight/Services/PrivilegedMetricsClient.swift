@@ -28,9 +28,10 @@ enum PrivilegedMetricsClient {
         var isRoot: Bool = false
     }
 
-    private static var cachedSensors = Sensors()
-    private static var lastSensorSample: TimeInterval = 0
-    private static var sensorInFlight = false
+    // 由 sensorLock 保护的共享状态（Swift 6 并发检查需显式标注）
+    nonisolated(unsafe) private static var cachedSensors = Sensors()
+    nonisolated(unsafe) private static var lastSensorSample: TimeInterval = 0
+    nonisolated(unsafe) private static var sensorInFlight = false
     /// powermetrics 较慢，后台节流
     private static let sensorInterval: TimeInterval = 3.0
     private static let sensorLock = NSLock()

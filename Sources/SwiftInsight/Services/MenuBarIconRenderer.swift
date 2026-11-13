@@ -7,8 +7,9 @@ enum MenuBarIconRenderer {
     static let singleModeWidth: CGFloat = 22
     static let combinedWidth: CGFloat = 18
 
-    private static let imageCache = NSCache<NSString, NSImage>()
-    private static let labelAttrs: [NSAttributedString.Key: Any] = {
+    /// NSCache 自身线程安全；属性缓存只在创建后读取
+    nonisolated(unsafe) private static let imageCache = NSCache<NSString, NSImage>()
+    nonisolated(unsafe) private static let labelAttrs: [NSAttributedString.Key: Any] = {
         let style = NSMutableParagraphStyle()
         style.alignment = .center
         return [

@@ -2,18 +2,19 @@ import Foundation
 import Darwin
 
 /// 采集整机 CPU / 内存 / Swap / 网络 / 磁盘吞吐
-/// 注意：sample() 应在同一后台队列串行调用，以维护差分状态
+/// 注意：sample() 必须在同一后台队列串行调用以维护差分状态。
+/// 下面的静态状态因此标记 nonisolated(unsafe)：由调用方的串行队列保证互斥。
 enum SystemMetricsCollector {
 
-    private static var previousCPU: host_cpu_load_info?
-    private static var previousCoreTicks: [[UInt32]]?
-    private static var previousNet: (inBytes: UInt64, outBytes: UInt64, time: TimeInterval)?
-    private static var previousDisk: (read: UInt64, write: UInt64, time: TimeInterval)?
+    nonisolated(unsafe) private static var previousCPU: host_cpu_load_info?
+    nonisolated(unsafe) private static var previousCoreTicks: [[UInt32]]?
+    nonisolated(unsafe) private static var previousNet: (inBytes: UInt64, outBytes: UInt64, time: TimeInterval)?
+    nonisolated(unsafe) private static var previousDisk: (read: UInt64, write: UInt64, time: TimeInterval)?
     /// 上一帧有效 CPU 结果，供首帧/无效差分时回退
-    private static var lastValidCPU: (user: Double, system: Double, idle: Double, nice: Double)?
-    private static var lastValidCores: [Double]?
-    private static var cachedPCores: Int?
-    private static var cachedECores: Int?
+    nonisolated(unsafe) private static var lastValidCPU: (user: Double, system: Double, idle: Double, nice: Double)?
+    nonisolated(unsafe) private static var lastValidCores: [Double]?
+    nonisolated(unsafe) private static var cachedPCores: Int?
+    nonisolated(unsafe) private static var cachedECores: Int?
 
     /// 全量：面板 / 主窗口
     static func sample() -> SystemMetrics {

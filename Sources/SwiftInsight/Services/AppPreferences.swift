@@ -155,7 +155,7 @@ final class AppPreferences: ObservableObject {
 /// 线程安全当前语言
 enum L10nRuntime {
     private static let lock = NSLock()
-    private static var _language: ResolvedLanguage = .zh
+    nonisolated(unsafe) private static var _language: ResolvedLanguage = .zh
 
     static var language: ResolvedLanguage {
         get { lock.lock(); defer { lock.unlock() }; return _language }

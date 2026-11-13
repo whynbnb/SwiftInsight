@@ -91,8 +91,8 @@ Focus: **Apple vs third-party** resource breakdown, a **stable menu-bar panel**,
 
 ## Requirements
 
-- macOS **14+**  
-- Xcode **15+** (or Swift 5.9+ with macOS SDK)  
+- macOS **15+**  
+- Xcode **16+** / Swift **6.0+** (strict concurrency enabled)  
 - Optional: [XcodeGen](https://github.com/yonaskolb/XcodeGen) after editing `project.yml`  
 
 ---
