@@ -81,6 +81,13 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section(L("settings.view_state")) {
+                Toggle(L("settings.remember_view_state"), isOn: $prefs.rememberViewState)
+                Text(L("settings.remember_view_state.caption"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section(L("settings.launch_at_login")) {
                 Toggle(L("settings.launch_at_login"), isOn: launchAtLoginBinding)
                     .disabled(!LaunchAtLogin.isAvailable)

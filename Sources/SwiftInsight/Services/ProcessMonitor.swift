@@ -57,24 +57,24 @@ final class ProcessMonitor: ObservableObject {
     @Published private(set) var menuBarPanelVisible = false
 
     @Published var sortColumn: SortColumn = .cpu {
-        didSet { recomputeDisplayed() }
+        didSet { persistViewState(); recomputeDisplayed() }
     }
     @Published var sortAscending = false {
-        didSet { recomputeDisplayed() }
+        didSet { persistViewState(); recomputeDisplayed() }
     }
     @Published var filterText = "" {
         didSet { recomputeDisplayed() }
     }
     @Published var categoryFilter: ProcessCategory? = nil {
-        didSet { recomputeDisplayed() }
+        didSet { persistViewState(); recomputeDisplayed() }
     }
     /// 范围筛选：全部 / 前台 App / 后台进程
     @Published var processScope: ProcessScope = .all {
-        didSet { recomputeDisplayed() }
+        didSet { persistViewState(); recomputeDisplayed() }
     }
-    /// 列表 / 应用聚合 / PPID 父子树
+    /// 列表 / 应用聚合 / 按应用 / PPID 父子树
     @Published var displayMode: ListDisplayMode = .tree {
-        didSet { recomputeDisplayed() }
+        didSet { persistViewState(); recomputeDisplayed() }
     }
     /// 历史窗口
     @Published var historyWindow: HistoryWindow = .twoMinutes {
@@ -115,6 +115,11 @@ final class ProcessMonitor: ObservableObject {
     private static let iconIntervalKey = "menuBarIconInterval"
     private static let panelIntervalKey = "menuBarPanelInterval"
     private static let legacyMenuBarIntervalKey = "menuBarRefreshInterval"
+    private static let viewCategoryKey = "viewCategoryFilter"
+    private static let viewScopeKey = "viewProcessScope"
+    private static let viewModeKey = "viewDisplayMode"
+    private static let viewSortKey = "viewSortColumn"
+    private static let viewSortAscendingKey = "viewSortAscending"
 
     /// 状态栏文案
     var statusText: String {
@@ -156,6 +161,7 @@ final class ProcessMonitor: ObservableObject {
            [1.0, 2.0, 3.0, 5.0].contains(saved) {
             menuBarPanelInterval = saved
         }
+        restoreViewStateIfNeeded()
         isRunning = true
         // 未知分类已从 UI 移除；若仍挂着旧筛选会看起来像「没数据」
         if categoryFilter == .unknown {
@@ -183,6 +189,47 @@ final class ProcessMonitor: ObservableObject {
         let status = PrivilegedMetricsClient.helperStatus()
         privilegedHelperInstalled = status.installed
         privilegedHelperRoot = status.root
+    }
+
+    // MARK: - View state persistence
+
+    /// 记住分类 / 前后台筛选 / 视图 / 排序（可在设置中关闭）
+    private func persistViewState() {
+        guard AppPreferences.shared.rememberViewState else { return }
+        let d = UserDefaults.standard
+        d.set(categoryFilter?.rawValue, forKey: Self.viewCategoryKey)
+        d.set(processScope.rawValue, forKey: Self.viewScopeKey)
+        d.set(displayMode.rawValue, forKey: Self.viewModeKey)
+        d.set(sortColumn.rawValue, forKey: Self.viewSortKey)
+        d.set(sortAscending, forKey: Self.viewSortAscendingKey)
+    }
+
+    private func restoreViewStateIfNeeded() {
+        guard AppPreferences.shared.rememberViewState else { return }
+        let d = UserDefaults.standard
+        // 先全部读出再赋值：didSet 会回写，避免读取被中途覆盖
+        let catRaw = d.string(forKey: Self.viewCategoryKey)
+        let scopeRaw = d.string(forKey: Self.viewScopeKey)
+        let modeRaw = d.string(forKey: Self.viewModeKey)
+        let sortRaw = d.string(forKey: Self.viewSortKey)
+        let hasAscending = d.object(forKey: Self.viewSortAscendingKey) != nil
+        let ascending = d.bool(forKey: Self.viewSortAscendingKey)
+
+        if let catRaw, catRaw != ProcessCategory.unknown.rawValue {
+            categoryFilter = ProcessCategory(rawValue: catRaw)
+        }
+        if let scopeRaw, let scope = ProcessScope(rawValue: scopeRaw) {
+            processScope = scope
+        }
+        if let modeRaw, let mode = ListDisplayMode(rawValue: modeRaw) {
+            displayMode = mode
+        }
+        if let sortRaw, let column = SortColumn(rawValue: sortRaw) {
+            sortColumn = column
+        }
+        if hasAscending {
+            sortAscending = ascending
+        }
     }
 
     func stop() {

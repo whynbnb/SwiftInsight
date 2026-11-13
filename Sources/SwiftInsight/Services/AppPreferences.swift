@@ -80,6 +80,7 @@ final class AppPreferences: ObservableObject {
     private static let languageKey = "appLanguage"
     private static let themeKey = "appTheme"
     private static let detailPanelPositionKey = "detailPanelPosition"
+    private static let rememberViewStateKey = "rememberViewState"
     private static let menuBarTopCountKey = "menuBarTopCount"
     private static let menuBarDisplayModeKey = "menuBarDisplayMode"
     nonisolated static let menuBarTopCountRange = 3...15
@@ -105,6 +106,13 @@ final class AppPreferences: ObservableObject {
     @Published var detailPanelPosition: DetailPanelPosition {
         didSet {
             UserDefaults.standard.set(detailPanelPosition.rawValue, forKey: Self.detailPanelPositionKey)
+        }
+    }
+
+    /// 是否记住界面状态（分类 / 前后台筛选 / 视图 / 排序）
+    @Published var rememberViewState: Bool {
+        didSet {
+            UserDefaults.standard.set(rememberViewState, forKey: Self.rememberViewStateKey)
         }
     }
 
@@ -158,6 +166,12 @@ final class AppPreferences: ObservableObject {
             detailPanelPosition = pos
         } else {
             detailPanelPosition = .right
+        }
+
+        if UserDefaults.standard.object(forKey: Self.rememberViewStateKey) == nil {
+            rememberViewState = true
+        } else {
+            rememberViewState = UserDefaults.standard.bool(forKey: Self.rememberViewStateKey)
         }
 
         let storedTop = UserDefaults.standard.object(forKey: Self.menuBarTopCountKey) as? Int
@@ -223,6 +237,9 @@ enum L10n {
         "settings.theme.caption": "浅色 / 深色，或跟随系统外观。",
         "settings.detail_position": "详情面板位置",
         "settings.detail_position.caption": "点击进程后，详情显示在右侧或底部（默认右侧）。",
+        "settings.view_state": "界面状态",
+        "settings.remember_view_state": "记住界面状态",
+        "settings.remember_view_state.caption": "记住分类、前后台筛选、视图模式和排序方式；关闭后每次启动恢复默认值。",
 
         // Categories
         "cat.appleSystem": "Apple 系统",
@@ -474,6 +491,9 @@ enum L10n {
         "settings.theme.caption": "Light, Dark, or follow system appearance.",
         "settings.detail_position": "Detail panel position",
         "settings.detail_position.caption": "Show process details on the right or at the bottom (right by default).",
+        "settings.view_state": "View state",
+        "settings.remember_view_state": "Remember view state",
+        "settings.remember_view_state.caption": "Remember category, scope, view mode, and sorting. When off, defaults are used on every launch.",
 
         "cat.appleSystem": "Apple System",
         "cat.appleApp": "Apple Apps",
