@@ -146,58 +146,97 @@ struct SidebarView: View {
     @EnvironmentObject private var monitor: ProcessMonitor
     @Binding var selectedPID: Int32?
 
-    private var selectedFilter: Binding<CategoryFilterItem?> {
-        Binding(
-            get: { CategoryFilterItem.from(category: monitor.categoryFilter) },
-            set: { newValue in
-                // 点击同一项时 SwiftUI 可能传 nil，保持当前筛选
-                let item = newValue ?? .all
-                monitor.categoryFilter = item.category
-            }
-        )
-    }
-
     var body: some View {
-        List(selection: selectedFilter) {
-            Section(L("sidebar.category")) {
-                ForEach(CategoryFilterItem.allCases) { item in
-                    HStack {
-                        Label(item.title, systemImage: item.symbolName)
-                        Spacer()
-                        Text("\(count(for: item))")
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                    .tag(item)
-                    .contentShape(Rectangle())
-                }
+        VStack(spacing: 0) {
+            // 固定区域：分类 / 筛选 / 资源对比，永远不滚动
+            VStack(alignment: .leading, spacing: 14) {
+                categorySection
+                filterSection
+                resourceSection
             }
+            .padding(.horizontal, 14)
+            .padding(.top, 8)
+            .padding(.bottom, 10)
 
-            Section(L("sidebar.filter")) {
-                Picker(L("sidebar.filter"), selection: $monitor.processScope) {
-                    ForEach(ProcessScope.allCases) { scope in
-                        Text(scope.title).tag(scope)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                // 按应用聚合时忽略范围筛选
-                .disabled(monitor.displayMode == .application)
-            }
+            Divider()
 
-            Section(L("sidebar.resource")) {
-                ResourceBreakdownView()
-            }
-
-            Section(L("sidebar.who")) {
+            // 仅排行区域滚动，占据剩余高度
+            VStack(alignment: .leading, spacing: 8) {
+                sectionTitle(L("sidebar.who"))
                 CategoryRankingsView { pid in
                     selectedPID = pid
                     monitor.inspectedPID = pid
                 }
             }
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .listStyle(.sidebar)
         .navigationTitle("SwiftInsight")
+    }
+
+    // MARK: Fixed sections
+
+    private var categorySection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            sectionTitle(L("sidebar.category"))
+            ForEach(CategoryFilterItem.allCases) { item in
+                categoryRow(item)
+            }
+        }
+    }
+
+    private var filterSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionTitle(L("sidebar.filter"))
+            Picker(L("sidebar.filter"), selection: $monitor.processScope) {
+                ForEach(ProcessScope.allCases) { scope in
+                    Text(scope.title).tag(scope)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .controlSize(.small)
+            // 按应用聚合时忽略范围筛选
+            .disabled(monitor.displayMode == .application)
+        }
+    }
+
+    private var resourceSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionTitle(L("sidebar.resource"))
+            ResourceBreakdownView()
+        }
+    }
+
+    private func sectionTitle(_ text: String) -> some View {
+        Text(text)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+    }
+
+    private func categoryRow(_ item: CategoryFilterItem) -> some View {
+        let selected = CategoryFilterItem.from(category: monitor.categoryFilter) == item
+        return Button {
+            monitor.categoryFilter = item.category
+        } label: {
+            HStack {
+                Label(item.title, systemImage: item.symbolName)
+                Spacer()
+                Text("\(count(for: item))")
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(selected ? Color.accentColor.opacity(0.2) : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func count(for item: CategoryFilterItem) -> Int {

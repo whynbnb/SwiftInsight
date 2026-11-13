@@ -450,31 +450,38 @@ struct CategoryRankingsView: View {
                 Text(L("rank.empty"))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
-                    .padding(.vertical, 2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                    Button {
-                        onSelect(item.process.pid)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Text("\(index + 1).")
-                                .font(.caption2.monospacedDigit())
-                                .foregroundStyle(.tertiary)
-                                .frame(width: 14, alignment: .trailing)
-                            Text(item.process.name)
-                                .font(.caption)
-                                .lineLimit(1)
-                            Spacer(minLength: 4)
-                            Text(item.metricLabel)
-                                .font(.caption2.monospacedDigit())
-                                .foregroundStyle(.secondary)
+                ScrollView(.vertical, showsIndicators: true) {
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                            Button {
+                                onSelect(item.process.pid)
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Text("\(index + 1).")
+                                        .font(.caption2.monospacedDigit())
+                                        .foregroundStyle(.tertiary)
+                                        .frame(width: 14, alignment: .trailing)
+                                    Text(item.process.name)
+                                        .font(.caption)
+                                        .lineLimit(1)
+                                    Spacer(minLength: 4)
+                                    Text(item.metricLabel)
+                                        .font(.caption2.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
-                    .buttonStyle(.plain)
+                    .padding(.trailing, 2)
                 }
+                .frame(maxHeight: .infinity)
             }
         }
-        .padding(.vertical, 4)
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 }
 
