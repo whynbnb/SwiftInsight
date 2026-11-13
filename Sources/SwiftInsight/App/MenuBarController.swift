@@ -635,6 +635,16 @@ final class MenuBarPanelView: NSView {
         memLegendStack.alignment = .leading
         memLegendStack.spacing = 6
         memLegendStack.distribution = .fillEqually
+        // 使用手动 frame 布局：先给一个满足子视图最小高度的高度，
+        // 否则 autoresizing mask 的 height==0 会与 LegendRowView 的固有高度冲突。
+        let legendRowHeight: CGFloat = 18
+        memLegendStack.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: 200,
+            height: CGFloat(memLegendRows.count) * legendRowHeight
+                + CGFloat(max(0, memLegendRows.count - 1)) * memLegendStack.spacing
+        )
         memLegendStack.translatesAutoresizingMaskIntoConstraints = true
         memLegendRows.forEach { row in
             row.translatesAutoresizingMaskIntoConstraints = false
