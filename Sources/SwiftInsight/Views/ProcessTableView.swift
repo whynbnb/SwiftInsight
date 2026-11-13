@@ -12,6 +12,9 @@ struct ProcessTableView: View {
             ProcessNSTable(
                 rows: monitor.displayRows,
                 selectedPID: $selectedPID,
+                sortColumn: monitor.sortColumn,
+                sortAscending: monitor.sortAscending,
+                onSort: { monitor.toggleSort($0) },
                 onTerminate: { pid, force in
                     monitor.terminate(pid: pid, force: force)
                 },
@@ -27,6 +30,11 @@ struct ProcessTableView: View {
 
     private var sortHeader: some View {
         HStack(spacing: 12) {
+            Text(L("toolbar.view"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize()
+
             Picker(L("toolbar.view"), selection: $monitor.displayMode) {
                 ForEach(ListDisplayMode.allCases) { mode in
                     Text(mode.displayName)
@@ -35,46 +43,20 @@ struct ProcessTableView: View {
                 }
             }
             .pickerStyle(.segmented)
+            .labelsHidden()
             // 固定为内容宽度：窗口变窄时不再压缩导致文字竖排
             .fixedSize()
 
             Divider().frame(height: 16)
 
-            // 排序项放在横向滚动容器里，窄窗口下只滚动，不换行/不挤压
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    Text(L("table.sort"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize()
-                    ForEach(SortColumn.allCases) { col in
-                        Button {
-                            monitor.toggleSort(col)
-                        } label: {
-                            HStack(spacing: 2) {
-                                Text(col.displayName)
-                                    .lineLimit(1)
-                                    .font(.caption.weight(monitor.sortColumn == col ? .semibold : .regular))
-                                if monitor.sortColumn == col {
-                                    Image(systemName: monitor.sortAscending ? "chevron.up" : "chevron.down")
-                                        .font(.caption2)
-                                }
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(
-                                monitor.sortColumn == col
-                                    ? Color.accentColor.opacity(0.15)
-                                    : Color.clear,
-                                in: Capsule()
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .fixedSize()
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            Text(L("sidebar.filter"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize()
+
+            ScopeFilterControl()
+
+            Spacer(minLength: 8)
 
             Text(countLabel)
                 .font(.caption)
@@ -101,9 +83,31 @@ struct ProcessTableView: View {
 
 // MARK: - NSTableView bridge
 
+/// 前后台范围选择：独立观察 monitor，切换时只重建这个小控件
+private struct ScopeFilterControl: View {
+    @EnvironmentObject private var monitor: ProcessMonitor
+
+    var body: some View {
+        Picker(L("sidebar.filter"), selection: $monitor.processScope) {
+            ForEach(ProcessScope.allCases) { scope in
+                Text(scope.title).tag(scope)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+        // 按应用聚合时忽略范围筛选
+        .disabled(monitor.displayMode == .application)
+        .help(L("sidebar.filter.help"))
+    }
+}
+
 private struct ProcessNSTable: NSViewRepresentable {
     let rows: [ProcessDisplayRow]
     @Binding var selectedPID: Int32?
+    let sortColumn: SortColumn
+    let sortAscending: Bool
+    var onSort: (SortColumn) -> Void
     var onTerminate: (Int32, Bool) -> Void
     var onFilterCategory: (ProcessCategory) -> Void
     var onToggleExpand: (String) -> Void
@@ -159,6 +163,7 @@ private struct ProcessNSTable: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.parent = self
         context.coordinator.apply(rows: rows, selectedPID: selectedPID)
+        context.coordinator.syncSortIndicator()
     }
 
     @MainActor
@@ -186,6 +191,7 @@ private struct ProcessNSTable: NSViewRepresentable {
 
         private var rows: [ProcessDisplayRow] = []
         private var isApplying = false
+        private var lastSortIndicatorState = ""
         private var iconCache: [String: NSImage] = [:]
 
         init(_ parent: ProcessNSTable) {
@@ -319,6 +325,37 @@ private struct ProcessNSTable: NSViewRepresentable {
             if parent.selectedPID != pid {
                 parent.selectedPID = pid
             }
+        }
+
+        /// 表头排序指示器与 monitor 的排序状态保持同步
+        func syncSortIndicator() {
+            guard let table = tableView else { return }
+            let key = parent.sortColumn.rawValue
+            let ascending = parent.sortAscending
+            let state = "\(key):\(ascending)"
+            guard state != lastSortIndicatorState else { return }
+            lastSortIndicatorState = state
+
+            table.sortDescriptors = [NSSortDescriptor(key: key, ascending: ascending)]
+            // 明确设置列头指示箭头，确保排序状态可见
+            let config = NSImage.SymbolConfiguration(pointSize: 9, weight: .bold)
+            let arrow = NSImage(
+                systemSymbolName: ascending ? "chevron.up" : "chevron.down",
+                accessibilityDescription: nil
+            )?.withSymbolConfiguration(config)
+            for column in table.tableColumns {
+                table.setIndicatorImage(nil, in: column)
+            }
+            if let column = table.tableColumns.first(where: { $0.identifier.rawValue == key }) {
+                table.setIndicatorImage(arrow, in: column)
+            }
+            table.headerView?.needsDisplay = true
+        }
+
+        /// 点击列头排序
+        func tableView(_ tableView: NSTableView, didClick tableColumn: NSTableColumn) {
+            guard let column = SortColumn(rawValue: tableColumn.identifier.rawValue) else { return }
+            parent.onSort(column)
         }
 
         @objc func doubleClicked(_ sender: Any?) {

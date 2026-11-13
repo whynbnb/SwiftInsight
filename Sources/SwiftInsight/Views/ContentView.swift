@@ -176,10 +176,9 @@ struct SidebarView: View, Equatable {
 
     var body: some View {
         VStack(spacing: 0) {
-            // 固定区域：分类 / 筛选 / 资源对比，永远不滚动
+            // 固定区域：分类 / 资源对比，永远不滚动
             VStack(alignment: .leading, spacing: 14) {
                 categorySection
-                filterSection
                 resourceSection
             }
             .padding(.horizontal, 14)
@@ -214,13 +213,6 @@ struct SidebarView: View, Equatable {
             ForEach(CategoryFilterItem.allCases) { item in
                 categoryRow(item)
             }
-        }
-    }
-
-    private var filterSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            sectionTitle(L("sidebar.filter"))
-            ScopeFilterControl()
         }
     }
 
@@ -272,25 +264,6 @@ struct SidebarView: View, Equatable {
 }
 
 // MARK: - Resource breakdown
-
-/// 前后台范围选择：独立观察 monitor，切换时只重建这个小控件，不牵动整个侧栏
-private struct ScopeFilterControl: View {
-    @EnvironmentObject private var monitor: ProcessMonitor
-
-    var body: some View {
-        Picker(L("sidebar.filter"), selection: $monitor.processScope) {
-            ForEach(ProcessScope.allCases) { scope in
-                Text(scope.title).tag(scope)
-            }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .controlSize(.small)
-        // 按应用聚合时忽略范围筛选
-        .disabled(monitor.displayMode == .application)
-        .help(L("sidebar.filter.help"))
-    }
-}
 
 struct ResourceBreakdownView: View {
     let summary: ResourceSummary
