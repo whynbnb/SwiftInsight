@@ -429,13 +429,17 @@ private struct MemoryCompositionBar: View {
 // MARK: - Category top rankings
 
 struct CategoryRankingsView: View {
-    @EnvironmentObject private var monitor: ProcessMonitor
-    @EnvironmentObject private var prefs: AppPreferences
+    let rankingTab: RankingTab
+    let rankings: CategoryRankings
+    var onSelectTab: (RankingTab) -> Void
     var onSelect: (Int32) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Picker(L("sidebar.who"), selection: $prefs.rankingTab) {
+            Picker(
+                L("sidebar.who"),
+                selection: Binding(get: { rankingTab }, set: onSelectTab)
+            ) {
                 ForEach(RankingTab.allCases) { tab in
                     Text(tab.title).tag(tab)
                 }
@@ -445,7 +449,7 @@ struct CategoryRankingsView: View {
             .controlSize(.small)
             .help(L("sidebar.who"))
 
-            let items = prefs.rankingTab.items(from: monitor.rankings)
+            let items = rankingTab.items(from: rankings)
             if items.isEmpty {
                 Text(L("rank.empty"))
                     .font(.caption2)

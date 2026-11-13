@@ -9,8 +9,23 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(selectedPID: $selectedPID)
-                .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 360)
+            SidebarView(
+                categoryFilter: monitor.categoryFilter,
+                summary: monitor.summary,
+                physicalMemory: monitor.systemMetrics.physicalMemory,
+                processScope: monitor.processScope,
+                rankings: monitor.rankings,
+                rankingTab: prefs.rankingTab,
+                onCategory: { monitor.categoryFilter = $0 },
+                onProcessScope: { monitor.processScope = $0 },
+                onRankingTab: { prefs.rankingTab = $0 },
+                onSelectRank: { pid in
+                    selectedPID = pid
+                    monitor.inspectedPID = pid
+                }
+            )
+            .equatable()
+            .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 360)
         } detail: {
             detailContent
         }
@@ -142,9 +157,27 @@ struct ContentView: View {
 
 // MARK: - Sidebar
 
-struct SidebarView: View {
-    @EnvironmentObject private var monitor: ProcessMonitor
-    @Binding var selectedPID: Int32?
+struct SidebarView: View, Equatable {
+    let categoryFilter: ProcessCategory?
+    let summary: ResourceSummary
+    let physicalMemory: UInt64
+    let processScope: ProcessScope
+    let rankings: CategoryRankings
+    let rankingTab: RankingTab
+    var onCategory: (ProcessCategory?) -> Void
+    var onProcessScope: (ProcessScope) -> Void
+    var onRankingTab: (RankingTab) -> Void
+    var onSelectRank: (Int32) -> Void
+
+    /// 只比较展示数据，忽略闭包；无关状态变化时跳过重建，避免侧栏闪烁
+    nonisolated static func == (lhs: SidebarView, rhs: SidebarView) -> Bool {
+        lhs.categoryFilter == rhs.categoryFilter
+            && lhs.summary == rhs.summary
+            && lhs.physicalMemory == rhs.physicalMemory
+            && lhs.processScope == rhs.processScope
+            && lhs.rankings == rhs.rankings
+            && lhs.rankingTab == rhs.rankingTab
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -163,10 +196,12 @@ struct SidebarView: View {
             // 仅排行区域滚动，占据剩余高度
             VStack(alignment: .leading, spacing: 8) {
                 sectionTitle(L("sidebar.who"))
-                CategoryRankingsView { pid in
-                    selectedPID = pid
-                    monitor.inspectedPID = pid
-                }
+                CategoryRankingsView(
+                    rankingTab: rankingTab,
+                    rankings: rankings,
+                    onSelectTab: onRankingTab,
+                    onSelect: onSelectRank
+                )
             }
             .padding(.horizontal, 14)
             .padding(.top, 10)
@@ -190,7 +225,10 @@ struct SidebarView: View {
     private var filterSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             sectionTitle(L("sidebar.filter"))
-            Picker(L("sidebar.filter"), selection: $monitor.processScope) {
+            Picker(
+                L("sidebar.filter"),
+                selection: Binding(get: { processScope }, set: onProcessScope)
+            ) {
                 ForEach(ProcessScope.allCases) { scope in
                     Text(scope.title).tag(scope)
                 }
@@ -198,15 +236,15 @@ struct SidebarView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .controlSize(.small)
-            // 按应用聚合时忽略范围筛选
-            .disabled(monitor.displayMode == .application)
+            // 按应用聚合时会忽略范围筛选，避免切换视图导致侧栏重建
+            .help(L("sidebar.filter.help"))
         }
     }
 
     private var resourceSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             sectionTitle(L("sidebar.resource"))
-            ResourceBreakdownView()
+            ResourceBreakdownView(summary: summary, physicalMemory: physicalMemory)
         }
     }
 
@@ -217,9 +255,9 @@ struct SidebarView: View {
     }
 
     private func categoryRow(_ item: CategoryFilterItem) -> some View {
-        let selected = CategoryFilterItem.from(category: monitor.categoryFilter) == item
+        let selected = CategoryFilterItem.from(category: categoryFilter) == item
         return Button {
-            monitor.categoryFilter = item.category
+            onCategory(item.category)
         } label: {
             HStack {
                 Label(item.title, systemImage: item.symbolName)
@@ -240,7 +278,7 @@ struct SidebarView: View {
     }
 
     private func count(for item: CategoryFilterItem) -> Int {
-        let s = monitor.summary
+        let s = summary
         switch item {
         case .all: return s.totalCount
         case .appleSystem: return s.appleSystemCount
@@ -253,10 +291,11 @@ struct SidebarView: View {
 // MARK: - Resource breakdown
 
 struct ResourceBreakdownView: View {
-    @EnvironmentObject private var monitor: ProcessMonitor
+    let summary: ResourceSummary
+    let physicalMemory: UInt64
 
     var body: some View {
-        let s = monitor.summary
+        let s = summary
         VStack(alignment: .leading, spacing: 10) {
             Text("CPU")
                 .font(.caption)
@@ -278,7 +317,7 @@ struct ResourceBreakdownView: View {
             Text(L("metric.memory"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            let phys = Double(monitor.systemMetrics.physicalMemory)
+            let phys = Double(physicalMemory)
             stackedBar(
                 segments: [
                     (.blue, Double(s.appleSystemMemory)),
