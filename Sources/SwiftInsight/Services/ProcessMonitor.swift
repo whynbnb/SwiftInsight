@@ -107,6 +107,7 @@ final class ProcessMonitor: ObservableObject {
     private var lastIconMemBucket = -1
     /// 最近一次含进程的采样（面板 Top 重建用，不对外发布）
     private var lastProcessSample: [MonitoredProcess] = []
+    private var isRecomputeScheduled = false
     private let detailScanInterval: TimeInterval = 5.0
     private let sampleQueue = DispatchQueue(label: "com.swiftinsight.process-sample", qos: .utility)
     private let historyStore = MetricsHistoryStore()
@@ -432,7 +433,20 @@ final class ProcessMonitor: ObservableObject {
         recomputeDisplayed()
     }
 
+    /// 合并同一轮 runloop 内的多次重算。
+    /// 关键：不在 SwiftUI 视图更新期间同步发布 displayRows，
+    /// 否则会触发 "Publishing changes from within view updates" 警告。
     private func recomputeDisplayed() {
+        guard !isRecomputeScheduled else { return }
+        isRecomputeScheduled = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.isRecomputeScheduled = false
+            self.recomputeDisplayedNow()
+        }
+    }
+
+    private func recomputeDisplayedNow() {
         // 按应用聚合时忽略前后台范围筛选，避免同应用的 helper 被拆散
         let effectiveScope: ProcessScope = displayMode == .application ? .all : processScope
         let outermostApp = displayMode == .application
