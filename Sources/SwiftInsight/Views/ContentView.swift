@@ -13,11 +13,9 @@ struct ContentView: View {
                 categoryFilter: monitor.categoryFilter,
                 summary: monitor.summary,
                 physicalMemory: monitor.systemMetrics.physicalMemory,
-                processScope: monitor.processScope,
                 rankings: monitor.rankings,
                 rankingTab: prefs.rankingTab,
                 onCategory: { monitor.categoryFilter = $0 },
-                onProcessScope: { monitor.processScope = $0 },
                 onRankingTab: { prefs.rankingTab = $0 },
                 onSelectRank: { pid in
                     selectedPID = pid
@@ -161,11 +159,9 @@ struct SidebarView: View, Equatable {
     let categoryFilter: ProcessCategory?
     let summary: ResourceSummary
     let physicalMemory: UInt64
-    let processScope: ProcessScope
     let rankings: CategoryRankings
     let rankingTab: RankingTab
     var onCategory: (ProcessCategory?) -> Void
-    var onProcessScope: (ProcessScope) -> Void
     var onRankingTab: (RankingTab) -> Void
     var onSelectRank: (Int32) -> Void
 
@@ -174,7 +170,6 @@ struct SidebarView: View, Equatable {
         lhs.categoryFilter == rhs.categoryFilter
             && lhs.summary == rhs.summary
             && lhs.physicalMemory == rhs.physicalMemory
-            && lhs.processScope == rhs.processScope
             && lhs.rankings == rhs.rankings
             && lhs.rankingTab == rhs.rankingTab
     }
@@ -225,19 +220,7 @@ struct SidebarView: View, Equatable {
     private var filterSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             sectionTitle(L("sidebar.filter"))
-            Picker(
-                L("sidebar.filter"),
-                selection: Binding(get: { processScope }, set: onProcessScope)
-            ) {
-                ForEach(ProcessScope.allCases) { scope in
-                    Text(scope.title).tag(scope)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .controlSize(.small)
-            // 按应用聚合时会忽略范围筛选，避免切换视图导致侧栏重建
-            .help(L("sidebar.filter.help"))
+            ScopeFilterControl()
         }
     }
 
@@ -289,6 +272,25 @@ struct SidebarView: View, Equatable {
 }
 
 // MARK: - Resource breakdown
+
+/// 前后台范围选择：独立观察 monitor，切换时只重建这个小控件，不牵动整个侧栏
+private struct ScopeFilterControl: View {
+    @EnvironmentObject private var monitor: ProcessMonitor
+
+    var body: some View {
+        Picker(L("sidebar.filter"), selection: $monitor.processScope) {
+            ForEach(ProcessScope.allCases) { scope in
+                Text(scope.title).tag(scope)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .controlSize(.small)
+        // 按应用聚合时忽略范围筛选
+        .disabled(monitor.displayMode == .application)
+        .help(L("sidebar.filter.help"))
+    }
+}
 
 struct ResourceBreakdownView: View {
     let summary: ResourceSummary
