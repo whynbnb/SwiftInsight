@@ -81,6 +81,7 @@ final class AppPreferences: ObservableObject {
     private static let themeKey = "appTheme"
     private static let detailPanelPositionKey = "detailPanelPosition"
     private static let rememberViewStateKey = "rememberViewState"
+    private static let rankingTabKey = "rankingTab"
     private static let menuBarTopCountKey = "menuBarTopCount"
     private static let menuBarDisplayModeKey = "menuBarDisplayMode"
     nonisolated static let menuBarTopCountRange = 3...15
@@ -113,6 +114,14 @@ final class AppPreferences: ObservableObject {
     @Published var rememberViewState: Bool {
         didSet {
             UserDefaults.standard.set(rememberViewState, forKey: Self.rememberViewStateKey)
+        }
+    }
+
+    /// 「谁在吃资源」当前标签页
+    @Published var rankingTab: RankingTab {
+        didSet {
+            guard rememberViewState else { return }
+            UserDefaults.standard.set(rankingTab.rawValue, forKey: Self.rankingTabKey)
         }
     }
 
@@ -168,10 +177,17 @@ final class AppPreferences: ObservableObject {
             detailPanelPosition = .right
         }
 
-        if UserDefaults.standard.object(forKey: Self.rememberViewStateKey) == nil {
-            rememberViewState = true
+        let remember = UserDefaults.standard.object(forKey: Self.rememberViewStateKey) == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: Self.rememberViewStateKey)
+        rememberViewState = remember
+
+        if remember,
+           let raw = UserDefaults.standard.string(forKey: Self.rankingTabKey),
+           let tab = RankingTab(rawValue: raw) {
+            rankingTab = tab
         } else {
-            rememberViewState = UserDefaults.standard.bool(forKey: Self.rememberViewStateKey)
+            rankingTab = .thirdCPU
         }
 
         let storedTop = UserDefaults.standard.object(forKey: Self.menuBarTopCountKey) as? Int
@@ -239,7 +255,7 @@ enum L10n {
         "settings.detail_position.caption": "点击进程后，详情显示在右侧或底部（默认右侧）。",
         "settings.view_state": "界面状态",
         "settings.remember_view_state": "记住界面状态",
-        "settings.remember_view_state.caption": "记住分类、前后台筛选、视图模式和排序方式；关闭后每次启动恢复默认值。",
+        "settings.remember_view_state.caption": "记住分类、前后台筛选、视图模式、排序方式和资源排行标签页；关闭后每次启动恢复默认值。",
 
         // Categories
         "cat.appleSystem": "Apple 系统",
@@ -429,6 +445,10 @@ enum L10n {
         "rank.third_mem": "第三方 · 内存",
         "rank.sys_cpu": "Apple 系统 · CPU",
         "rank.app_cpu": "Apple 应用 · CPU",
+        "rank.tab.third_cpu": "三方 CPU",
+        "rank.tab.third_mem": "三方 内存",
+        "rank.tab.sys_cpu": "系统",
+        "rank.tab.app_cpu": "应用",
         "rank.empty": "暂无数据",
         "detail.parent": "父进程",
         "detail.open_files": "打开文件",
@@ -493,7 +513,7 @@ enum L10n {
         "settings.detail_position.caption": "Show process details on the right or at the bottom (right by default).",
         "settings.view_state": "View state",
         "settings.remember_view_state": "Remember view state",
-        "settings.remember_view_state.caption": "Remember category, scope, view mode, and sorting. When off, defaults are used on every launch.",
+        "settings.remember_view_state.caption": "Remember category, scope, view mode, sorting, and the ranking tab. When off, defaults are used on every launch.",
 
         "cat.appleSystem": "Apple System",
         "cat.appleApp": "Apple Apps",
@@ -677,6 +697,10 @@ enum L10n {
         "rank.third_mem": "Third-Party · Memory",
         "rank.sys_cpu": "Apple System · CPU",
         "rank.app_cpu": "Apple Apps · CPU",
+        "rank.tab.third_cpu": "3rd CPU",
+        "rank.tab.third_mem": "3rd Mem",
+        "rank.tab.sys_cpu": "System",
+        "rank.tab.app_cpu": "Apps",
         "rank.empty": "No data",
         "detail.parent": "Parent",
         "detail.open_files": "Open files",

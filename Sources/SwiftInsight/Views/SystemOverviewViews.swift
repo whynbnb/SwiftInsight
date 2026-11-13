@@ -430,29 +430,27 @@ private struct MemoryCompositionBar: View {
 
 struct CategoryRankingsView: View {
     @EnvironmentObject private var monitor: ProcessMonitor
+    @EnvironmentObject private var prefs: AppPreferences
     var onSelect: (Int32) -> Void
 
     var body: some View {
-        let r = monitor.rankings
-        VStack(alignment: .leading, spacing: 12) {
-            rankSection(title: L("rank.third_cpu"), symbol: "flame", items: r.thirdPartyByCPU)
-            rankSection(title: L("rank.third_mem"), symbol: "memorychip", items: r.thirdPartyByMemory)
-            rankSection(title: L("rank.sys_cpu"), symbol: "gearshape.2", items: r.appleSystemByCPU)
-            rankSection(title: L("rank.app_cpu"), symbol: "apple.logo", items: r.appleAppByCPU)
-        }
-        .padding(.vertical, 4)
-    }
+        VStack(alignment: .leading, spacing: 8) {
+            Picker(L("sidebar.who"), selection: $prefs.rankingTab) {
+                ForEach(RankingTab.allCases) { tab in
+                    Text(tab.title).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .controlSize(.small)
+            .help(L("sidebar.who"))
 
-    @ViewBuilder
-    private func rankSection(title: String, symbol: String, items: [ProcessRankingItem]) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Label(title, systemImage: symbol)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+            let items = prefs.rankingTab.items(from: monitor.rankings)
             if items.isEmpty {
                 Text(L("rank.empty"))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+                    .padding(.vertical, 2)
             } else {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     Button {
@@ -476,6 +474,7 @@ struct CategoryRankingsView: View {
                 }
             }
         }
+        .padding(.vertical, 4)
     }
 }
 

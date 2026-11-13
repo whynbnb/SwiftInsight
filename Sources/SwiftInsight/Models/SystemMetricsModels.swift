@@ -140,6 +140,34 @@ struct CategoryRankings: Equatable {
     var appleAppByCPU: [ProcessRankingItem] = []
 }
 
+/// 「谁在吃资源」排行标签页
+enum RankingTab: String, CaseIterable, Identifiable {
+    case thirdCPU
+    case thirdMemory
+    case systemCPU
+    case appleAppCPU
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .thirdCPU: return L("rank.tab.third_cpu")
+        case .thirdMemory: return L("rank.tab.third_mem")
+        case .systemCPU: return L("rank.tab.sys_cpu")
+        case .appleAppCPU: return L("rank.tab.app_cpu")
+        }
+    }
+
+    func items(from rankings: CategoryRankings) -> [ProcessRankingItem] {
+        switch self {
+        case .thirdCPU: return rankings.thirdPartyByCPU
+        case .thirdMemory: return rankings.thirdPartyByMemory
+        case .systemCPU: return rankings.appleSystemByCPU
+        case .appleAppCPU: return rankings.appleAppByCPU
+        }
+    }
+}
+
 struct ProcessOpenFile: Identifiable, Hashable {
     let id: Int32
     let fd: Int32
