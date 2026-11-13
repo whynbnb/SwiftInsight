@@ -59,7 +59,7 @@ final class ControlKeyMonitor: ObservableObject {
         }
         isControlPressed = false
         if resumeRefresh {
-            processMonitor?.setRefreshPaused(false)
+            processMonitor?.setControlPaused(false)
         }
     }
 
@@ -67,6 +67,6 @@ final class ControlKeyMonitor: ObservableObject {
         let pressed = flags.contains(.control)
         guard isControlPressed != pressed else { return }
         isControlPressed = pressed
-        processMonitor?.setRefreshPaused(pressed)
+        processMonitor?.setControlPaused(pressed)
     }
 }

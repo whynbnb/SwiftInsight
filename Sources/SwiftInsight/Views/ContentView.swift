@@ -42,14 +42,6 @@ struct ContentView: View {
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                Picker(L("toolbar.view"), selection: $monitor.displayMode) {
-                    ForEach(ListDisplayMode.allCases) { mode in
-                        Text(mode.displayName).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 180)
-
                 Picker(L("settings.refresh"), selection: $monitor.refreshInterval) {
                     Text(L("settings.1s")).tag(1.0)
                     Text(L("settings.2s")).tag(2.0)
@@ -60,6 +52,17 @@ struct ContentView: View {
                 .frame(width: 80)
                 .disabled(monitor.isRefreshPaused)
                 .help(L("settings.refresh.main.caption"))
+
+                Button {
+                    monitor.toggleManualLock()
+                } label: {
+                    Label(
+                        monitor.isManualLock ? L("toolbar.unlock") : L("toolbar.lock"),
+                        systemImage: monitor.isManualLock ? "lock.fill" : "lock.open"
+                    )
+                }
+                .help(L("toolbar.lock.help"))
+                .tint(monitor.isManualLock ? Color.orange : nil)
 
                 Button {
                     monitor.refresh()

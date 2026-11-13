@@ -22,6 +22,9 @@ final class ProcessMonitor: ObservableObject {
     @Published private(set) var isRunning = false
     /// 按住 Control 时为 true：仅暂停主窗口自动刷新（菜单栏常驻采样不受影响）
     @Published private(set) var isRefreshPaused = false
+    /// 工具栏「锁定数据」按钮：与 Control 暂停相互独立
+    @Published private(set) var isManualLock = false
+    private var isControlPaused = false
     /// 主窗口：完整进程列表（仅主窗口可见时）
     @Published var refreshInterval: TimeInterval = 2.0 {
         didSet {
@@ -119,6 +122,9 @@ final class ProcessMonitor: ObservableObject {
             return L("status.stopped")
         }
         if mainWindowVisible {
+            if isManualLock {
+                return L("status.locked")
+            }
             if isRefreshPaused {
                 return L("status.paused")
             }
@@ -193,7 +199,20 @@ final class ProcessMonitor: ObservableObject {
     }
 
     /// Control 键：仅影响主窗口自动刷新
-    func setRefreshPaused(_ paused: Bool) {
+    func setControlPaused(_ paused: Bool) {
+        guard isControlPaused != paused else { return }
+        isControlPaused = paused
+        updatePauseState()
+    }
+
+    /// 工具栏「锁定数据」：暂停/恢复主窗口自动刷新
+    func toggleManualLock() {
+        isManualLock.toggle()
+        updatePauseState()
+    }
+
+    private func updatePauseState() {
+        let paused = isManualLock || isControlPaused
         guard isRefreshPaused != paused else { return }
         isRefreshPaused = paused
         if !paused, isRunning, mainWindowVisible {
@@ -208,6 +227,12 @@ final class ProcessMonitor: ObservableObject {
     func setMainWindowVisible(_ visible: Bool) {
         guard mainWindowVisible != visible else { return }
         mainWindowVisible = visible
+        if !visible {
+            // 关闭主窗口后解除锁定，下次打开默认恢复实时刷新
+            isManualLock = false
+            isControlPaused = false
+            updatePauseState()
+        }
         onMainWindowVisibilityChange?(visible)
         restartTimers()
         guard isRunning else { return }
