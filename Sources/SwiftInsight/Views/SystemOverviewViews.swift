@@ -484,31 +484,55 @@ struct CategoryRankingsView: View {
 struct ProcessDetailPanel: View {
     @EnvironmentObject private var monitor: ProcessMonitor
     let process: MonitoredProcess
+    var layout: DetailPanelLayout = .horizontal
     var onTerminate: () -> Void
     var onForceQuit: () -> Void
+    var onClose: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
-            ProcessDetailBar(process: process, onTerminate: onTerminate, onForceQuit: onForceQuit)
+            ProcessDetailBar(
+                process: process,
+                layout: layout,
+                onTerminate: onTerminate,
+                onForceQuit: onForceQuit,
+                onClose: onClose
+            )
 
             let detail = monitor.selectedDetail
             VStack(alignment: .leading, spacing: 8) {
-                ProcessHistoryChart(samples: monitor.processHistory, window: monitor.historyWindow)
+                ProcessHistoryChart(
+                    samples: monitor.processHistory,
+                    window: monitor.historyWindow,
+                    vertical: layout == .vertical
+                )
 
-                HStack(spacing: 16) {
-                    if let parent = detail.parentName {
-                        labelValue(L("detail.parent"), "\(parent) (\(process.ppid))")
-                    } else {
-                        labelValue(L("detail.parent"), "PID \(process.ppid)")
+                if layout == .vertical {
+                    VStack(alignment: .leading, spacing: 6) {
+                        parentInfo(detail)
+                        HStack(spacing: 16) {
+                            labelValue(L("detail.open_files"), "\(detail.openFileCount)")
+                            if let start = process.startTime {
+                                labelValue(L("detail.started"), start.formatted(date: .omitted, time: .shortened))
+                            }
+                        }
+                        Text(detail.sampleNote)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(2)
                     }
-                    labelValue(L("detail.open_files"), "\(detail.openFileCount)")
-                    if let start = process.startTime {
-                        labelValue(L("detail.started"), start.formatted(date: .omitted, time: .shortened))
+                } else {
+                    HStack(spacing: 16) {
+                        parentInfo(detail)
+                        labelValue(L("detail.open_files"), "\(detail.openFileCount)")
+                        if let start = process.startTime {
+                            labelValue(L("detail.started"), start.formatted(date: .omitted, time: .shortened))
+                        }
+                        Text(detail.sampleNote)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                        Spacer()
                     }
-                    Text(detail.sampleNote)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                    Spacer()
                 }
 
                 if !detail.openFiles.isEmpty {
@@ -528,6 +552,19 @@ struct ProcessDetailPanel: View {
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 10)
+
+            if layout == .vertical {
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func parentInfo(_ detail: ProcessDetailInfo) -> some View {
+        if let parent = detail.parentName {
+            labelValue(L("detail.parent"), "\(parent) (\(process.ppid))")
+        } else {
+            labelValue(L("detail.parent"), "PID \(process.ppid)")
         }
     }
 

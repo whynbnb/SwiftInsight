@@ -131,6 +131,7 @@ struct SystemHistoryCharts: View {
 struct ProcessHistoryChart: View {
     let samples: [MetricSample]
     let window: HistoryWindow
+    var vertical: Bool = false
 
     var body: some View {
         if samples.count < 2 {
@@ -140,52 +141,48 @@ struct ProcessHistoryChart: View {
                     .foregroundStyle(.tertiary)
                 Spacer()
             }
-            .frame(height: 56)
+            .frame(height: vertical ? 34 : 56)
+        } else if vertical {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text("CPU")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(String(format: "%.1f%%", samples.last?.cpu ?? 0))
+                        .font(.caption2.monospacedDigit().weight(.semibold))
+                }
+                cpuChart
+                    .frame(height: 34)
+
+                HStack(spacing: 6) {
+                    Text(L("metric.memory"))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if let last = samples.last {
+                        Text(ByteCountFormatter.string(fromByteCount: Int64(last.memoryBytes), countStyle: .memory))
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                memoryChart
+                    .frame(height: 34)
+            }
         } else {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("CPU")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                    Chart(samples) { s in
-                        LineMark(
-                            x: .value("t", s.date),
-                            y: .value("cpu", s.cpu)
-                        )
-                        .foregroundStyle(Color.accentColor)
-                        .interpolationMethod(.catmullRom)
-                        AreaMark(
-                            x: .value("t", s.date),
-                            y: .value("cpu", s.cpu)
-                        )
-                        .foregroundStyle(Color.accentColor.opacity(0.15))
-                        .interpolationMethod(.catmullRom)
-                    }
-                    .chartXAxis(.hidden)
-                    .chartYAxis(.hidden)
-                    .chartYScale(domain: 0...max(5, (samples.map(\.cpu).max() ?? 1) * 1.15))
+                    cpuChart
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(L("metric.memory"))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                    Chart(samples) { s in
-                        LineMark(
-                            x: .value("t", s.date),
-                            y: .value("mem", Double(s.memoryBytes) / 1_048_576.0)
-                        )
-                        .foregroundStyle(Color.orange)
-                        .interpolationMethod(.catmullRom)
-                        AreaMark(
-                            x: .value("t", s.date),
-                            y: .value("mem", Double(s.memoryBytes) / 1_048_576.0)
-                        )
-                        .foregroundStyle(Color.orange.opacity(0.15))
-                        .interpolationMethod(.catmullRom)
-                    }
-                    .chartXAxis(.hidden)
-                    .chartYAxis(.hidden)
+                    memoryChart
                 }
 
                 VStack(alignment: .trailing, spacing: 2) {
@@ -204,5 +201,44 @@ struct ProcessHistoryChart: View {
             }
             .frame(height: 56)
         }
+    }
+
+    private var cpuChart: some View {
+        Chart(samples) { s in
+            LineMark(
+                x: .value("t", s.date),
+                y: .value("cpu", s.cpu)
+            )
+            .foregroundStyle(Color.accentColor)
+            .interpolationMethod(.catmullRom)
+            AreaMark(
+                x: .value("t", s.date),
+                y: .value("cpu", s.cpu)
+            )
+            .foregroundStyle(Color.accentColor.opacity(0.15))
+            .interpolationMethod(.catmullRom)
+        }
+        .chartXAxis(.hidden)
+        .chartYAxis(.hidden)
+        .chartYScale(domain: 0...max(5, (samples.map(\.cpu).max() ?? 1) * 1.15))
+    }
+
+    private var memoryChart: some View {
+        Chart(samples) { s in
+            LineMark(
+                x: .value("t", s.date),
+                y: .value("mem", Double(s.memoryBytes) / 1_048_576.0)
+            )
+            .foregroundStyle(Color.orange)
+            .interpolationMethod(.catmullRom)
+            AreaMark(
+                x: .value("t", s.date),
+                y: .value("mem", Double(s.memoryBytes) / 1_048_576.0)
+            )
+            .foregroundStyle(Color.orange.opacity(0.15))
+            .interpolationMethod(.catmullRom)
+        }
+        .chartXAxis(.hidden)
+        .chartYAxis(.hidden)
     }
 }

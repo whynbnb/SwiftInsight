@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var monitor: ProcessMonitor
+    @EnvironmentObject private var prefs: AppPreferences
     @State private var selectedPID: Int32?
     @State private var showTerminateConfirm = false
     @State private var terminateForce = false
@@ -11,30 +12,7 @@ struct ContentView: View {
             SidebarView(selectedPID: $selectedPID)
                 .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 360)
         } detail: {
-            VStack(spacing: 0) {
-                SystemOverviewBar()
-                Divider()
-                SystemHistoryCharts()
-                Divider()
-                SummaryBarView()
-                Divider()
-                ProcessTableView(selectedPID: $selectedPID)
-                if let pid = selectedPID,
-                   let process = monitor.processes.first(where: { $0.pid == pid }) {
-                    Divider()
-                    ProcessDetailPanel(
-                        process: process,
-                        onTerminate: {
-                            terminateForce = false
-                            showTerminateConfirm = true
-                        },
-                        onForceQuit: {
-                            terminateForce = true
-                            showTerminateConfirm = true
-                        }
-                    )
-                }
-            }
+            detailContent
         }
         .searchable(text: $monitor.filterText, prompt: L("search.prompt"))
         .onChange(of: selectedPID) { _, pid in
@@ -90,6 +68,75 @@ struct ContentView: View {
                 Text("\(p.name) (PID \(p.pid))")
             }
         }
+    }
+
+    // MARK: - Detail layout
+
+    /// 主内容列（系统条 / 图表 / 汇总 / 进程表）
+    private var mainColumn: some View {
+        VStack(spacing: 0) {
+            SystemOverviewBar()
+            Divider()
+            SystemHistoryCharts()
+            Divider()
+            SummaryBarView()
+            Divider()
+            ProcessTableView(selectedPID: $selectedPID)
+        }
+    }
+
+    @ViewBuilder
+    private var detailContent: some View {
+        if prefs.detailPanelPosition == .right {
+            HSplitView {
+                mainColumn
+                    .frame(minWidth: 560, maxWidth: .infinity, maxHeight: .infinity)
+                if let process = selectedProcess {
+                    ProcessDetailPanel(
+                        process: process,
+                        layout: .vertical,
+                        onTerminate: requestTerminate,
+                        onForceQuit: requestForceQuit,
+                        onClose: closeDetail
+                    )
+                    .frame(minWidth: 300, idealWidth: 340, maxWidth: 460, maxHeight: .infinity, alignment: .top)
+                    .background(Color(nsColor: .windowBackgroundColor))
+                }
+            }
+        } else {
+            VStack(spacing: 0) {
+                mainColumn
+                if let process = selectedProcess {
+                    Divider()
+                    ProcessDetailPanel(
+                        process: process,
+                        layout: .horizontal,
+                        onTerminate: requestTerminate,
+                        onForceQuit: requestForceQuit,
+                        onClose: closeDetail
+                    )
+                }
+            }
+        }
+    }
+
+    private var selectedProcess: MonitoredProcess? {
+        guard let pid = selectedPID else { return nil }
+        return monitor.processes.first { $0.pid == pid }
+    }
+
+    private func requestTerminate() {
+        terminateForce = false
+        showTerminateConfirm = true
+    }
+
+    private func requestForceQuit() {
+        terminateForce = true
+        showTerminateConfirm = true
+    }
+
+    private func closeDetail() {
+        selectedPID = nil
     }
 }
 
@@ -376,28 +423,35 @@ struct SummaryBarView: View {
 
 // MARK: - Detail bar
 
+enum DetailPanelLayout {
+    case horizontal
+    case vertical
+}
+
 struct ProcessDetailBar: View {
     let process: MonitoredProcess
+    var layout: DetailPanelLayout = .horizontal
     var onTerminate: () -> Void
     var onForceQuit: () -> Void
+    var onClose: () -> Void
 
     var body: some View {
-        HStack(spacing: 16) {
-            ProcessIconView(path: process.path, name: process.name)
-                .frame(width: 32, height: 32)
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 8) {
-                    Text(process.name)
-                        .font(.headline)
-                    CategoryBadge(category: process.category)
-                }
-                Text(process.path.isEmpty ? L("detail.path_unavailable") : process.path)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+        Group {
+            if layout == .vertical {
+                verticalContent
+            } else {
+                horizontalContent
             }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+
+    // MARK: Horizontal（底部面板）
+
+    private var horizontalContent: some View {
+        HStack(spacing: 16) {
+            iconAndTitle
 
             Spacer()
 
@@ -414,27 +468,98 @@ struct ProcessDetailBar: View {
                 detailStat("Bundle", bid)
             }
 
-            Menu {
-                Button(L("alert.quit_btn"), action: onTerminate)
-                Button(L("alert.force_quit_btn"), role: .destructive, action: onForceQuit)
-                Divider()
-                if !process.path.isEmpty {
-                    Button(L("menu.reveal")) {
-                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: process.path)])
-                    }
-                    Button(L("menu.copy_path")) {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(process.path, forType: .string)
-                    }
-                }
-            } label: {
-                Label(L("detail.actions"), systemImage: "ellipsis.circle")
-            }
-            .menuStyle(.borderlessButton)
-            .frame(width: 70)
+            actionsMenu
+                .frame(width: 70)
+
+            closeButton
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+    }
+
+    // MARK: Vertical（右侧面板）
+
+    private var verticalContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                iconAndTitle
+                Spacer(minLength: 4)
+                actionsMenu
+                closeButton
+            }
+
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(), alignment: .leading),
+                    GridItem(.flexible(), alignment: .leading),
+                ],
+                alignment: .leading,
+                spacing: 8
+            ) {
+                detailStat("PID", "\(process.pid)")
+                detailStat(L("detail.threads"), "\(process.threadCount)")
+                detailStat(L("detail.user"), process.username)
+                detailStat("CPU", process.cpuFormatted)
+                detailStat(L("detail.memory"), process.memoryFormatted)
+                if process.metricsFromHelper {
+                    detailStat(L("detail.source"), "root Helper")
+                }
+                if let bid = process.bundleIdentifier {
+                    detailStat("Bundle", bid)
+                }
+            }
+        }
+    }
+
+    private var iconAndTitle: some View {
+        HStack(spacing: 10) {
+            ProcessIconView(path: process.path, name: process.name)
+                .frame(width: 32, height: 32)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 8) {
+                    Text(process.name)
+                        .font(.headline)
+                        .lineLimit(1)
+                    CategoryBadge(category: process.category)
+                }
+                Text(process.path.isEmpty ? L("detail.path_unavailable") : process.path)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(layout == .vertical ? 2 : 1)
+                    .truncationMode(.middle)
+            }
+        }
+    }
+
+    private var actionsMenu: some View {
+        Menu {
+            Button(L("alert.quit_btn"), action: onTerminate)
+            Button(L("alert.force_quit_btn"), role: .destructive, action: onForceQuit)
+            Divider()
+            if !process.path.isEmpty {
+                Button(L("menu.reveal")) {
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: process.path)])
+                }
+                Button(L("menu.copy_path")) {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(process.path, forType: .string)
+                }
+            }
+        } label: {
+            Label(L("detail.actions"), systemImage: "ellipsis.circle")
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    private var closeButton: some View {
+        Button(action: onClose) {
+            Image(systemName: "xmark.circle.fill")
+                .font(.system(size: 15))
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .help(L("detail.close"))
+        .accessibilityLabel(L("detail.close"))
     }
 
     private func detailStat(_ title: String, _ value: String) -> some View {

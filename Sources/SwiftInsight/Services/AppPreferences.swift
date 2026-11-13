@@ -58,12 +58,28 @@ enum AppTheme: String, CaseIterable, Identifiable {
     }
 }
 
+/// 进程详情面板位置（右侧 / 底部）
+enum DetailPanelPosition: String, CaseIterable, Identifiable {
+    case right
+    case bottom
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .right: return L("detail.position.right")
+        case .bottom: return L("detail.position.bottom")
+        }
+    }
+}
+
 @MainActor
 final class AppPreferences: ObservableObject {
     static let shared = AppPreferences()
 
     private static let languageKey = "appLanguage"
     private static let themeKey = "appTheme"
+    private static let detailPanelPositionKey = "detailPanelPosition"
     private static let menuBarTopCountKey = "menuBarTopCount"
     private static let menuBarDisplayModeKey = "menuBarDisplayMode"
     nonisolated static let menuBarTopCountRange = 3...15
@@ -82,6 +98,13 @@ final class AppPreferences: ObservableObject {
         didSet {
             UserDefaults.standard.set(theme.rawValue, forKey: Self.themeKey)
             applyTheme()
+        }
+    }
+
+    /// 进程详情面板位置：右侧（默认）/ 底部
+    @Published var detailPanelPosition: DetailPanelPosition {
+        didSet {
+            UserDefaults.standard.set(detailPanelPosition.rawValue, forKey: Self.detailPanelPositionKey)
         }
     }
 
@@ -129,6 +152,13 @@ final class AppPreferences: ObservableObject {
             th = .system
         }
         theme = th
+
+        if let raw = UserDefaults.standard.string(forKey: Self.detailPanelPositionKey),
+           let pos = DetailPanelPosition(rawValue: raw) {
+            detailPanelPosition = pos
+        } else {
+            detailPanelPosition = .right
+        }
 
         let storedTop = UserDefaults.standard.object(forKey: Self.menuBarTopCountKey) as? Int
             ?? Self.menuBarTopCountDefault
@@ -191,6 +221,8 @@ enum L10n {
         "settings.theme": "主题",
         "settings.language.caption": "切换后界面立即更新；菜单栏面板同步刷新。",
         "settings.theme.caption": "浅色 / 深色，或跟随系统外观。",
+        "settings.detail_position": "详情面板位置",
+        "settings.detail_position.caption": "点击进程后，详情显示在右侧或底部（默认右侧）。",
 
         // Categories
         "cat.appleSystem": "Apple 系统",
@@ -359,6 +391,9 @@ enum L10n {
         "detail.path_unavailable": "路径不可用",
         "detail.source": "来源",
         "detail.actions": "操作",
+        "detail.close": "关闭详情",
+        "detail.position.right": "右侧",
+        "detail.position.bottom": "底部",
         "detail.user": "用户",
         "detail.threads": "线程",
         "detail.memory": "内存",
@@ -437,6 +472,8 @@ enum L10n {
         "settings.theme": "Theme",
         "settings.language.caption": "UI updates immediately; menu bar panel refreshes too.",
         "settings.theme.caption": "Light, Dark, or follow system appearance.",
+        "settings.detail_position": "Detail panel position",
+        "settings.detail_position.caption": "Show process details on the right or at the bottom (right by default).",
 
         "cat.appleSystem": "Apple System",
         "cat.appleApp": "Apple Apps",
@@ -599,6 +636,9 @@ enum L10n {
         "detail.path_unavailable": "Path unavailable",
         "detail.source": "Source",
         "detail.actions": "Actions",
+        "detail.close": "Close details",
+        "detail.position.right": "Right",
+        "detail.position.bottom": "Bottom",
         "detail.user": "User",
         "detail.threads": "Threads",
         "detail.memory": "Memory",

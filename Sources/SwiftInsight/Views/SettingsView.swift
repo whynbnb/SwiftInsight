@@ -69,6 +69,16 @@ struct SettingsView: View {
                 Text(L("settings.theme.caption"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                Picker(L("settings.detail_position"), selection: $prefs.detailPanelPosition) {
+                    ForEach(DetailPanelPosition.allCases) { position in
+                        Text(position.displayName).tag(position)
+                    }
+                }
+                .pickerStyle(.segmented)
+                Text(L("settings.detail_position.caption"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section(L("settings.launch_at_login")) {
