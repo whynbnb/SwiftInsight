@@ -255,6 +255,8 @@ final class ProcessMonitor: ObservableObject {
         lastProcessSample = []
         summary = ResourceSummary()
         previousCPU = [:]
+        historyStore.reset()
+        ProcessClassifier.purgeIconCache()
         if !systemHistory.isEmpty { systemHistory = [] }
         if !processHistory.isEmpty { processHistory = [] }
         if inspectedPID != nil {

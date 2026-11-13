@@ -204,6 +204,7 @@ final class MenuBarController: NSObject, ObservableObject {
 
     /// 面板打开时再订阅；关闭即取消
     private func bindPanelData(_ monitor: ProcessMonitor) {
+        dataCancellables.removeAll()
         Publishers.CombineLatest4(
             monitor.$systemMetrics,
             monitor.$summary,

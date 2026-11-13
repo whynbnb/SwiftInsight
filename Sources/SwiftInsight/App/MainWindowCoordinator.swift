@@ -14,6 +14,8 @@ enum MainWindowCoordinator {
     private static weak var processMonitor: ProcessMonitor?
     private static var hostedMainWindow: NSWindow?
     private static var launchSettled = false
+    /// 关闭后延迟销毁主窗口：释放 SwiftUI 视图树 / 图层 / 图表缓存
+    private static var pendingDestroy: DispatchWorkItem?
 
     /// 上次退出时主窗口是否可见（默认 true：首次启动打开主界面）
     static var preferredMainWindowVisible: Bool {
@@ -74,11 +76,15 @@ enum MainWindowCoordinator {
     }
 
     static func showMainWindow() {
+        // 取消尚未执行的销毁（快速关闭再打开时复用同一窗口）
+        pendingDestroy?.cancel()
+        pendingDestroy = nil
+
         preferredMainWindowVisible = true
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
 
-        if let window = hostedMainWindow ?? allMainWindows().first {
+        if let window = hostedMainWindow {
             if window.isMiniaturized {
                 window.deminiaturize(nil)
             }
@@ -129,6 +135,33 @@ enum MainWindowCoordinator {
         hosting.rootView = makeMainRootView()
     }
 
+    /// 关闭后延迟销毁主窗口：SwiftUI 视图树、图层与图表缓存随之释放。
+    /// 快速重新打开会取消销毁并复用原窗口。
+    static func scheduleMainWindowTeardown(after delay: TimeInterval = 0.2) {
+        pendingDestroy?.cancel()
+        let target = hostedMainWindow
+        let work = DispatchWorkItem {
+            guard let target, hostedMainWindow === target else { return }
+            tearDownMainWindow(target)
+        }
+        pendingDestroy = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private static func tearDownMainWindow(_ window: NSWindow) {
+        let key = ObjectIdentifier(window)
+        window.delegate = nil
+        closeHandlers.removeValue(forKey: key)
+        // 先断开 SwiftUI 宿主，再关闭，确保整棵视图树可回收
+        window.contentViewController = nil
+        window.orderOut(nil)
+        window.close()
+        hostedMainWindow = nil
+        mainHosting = nil
+        pendingDestroy = nil
+        notifyMainVisibility()
+    }
+
     static func updateDockVisibility() {
         let hasVisibleMain = !visibleMainWindows().isEmpty
         let hasAbout = NSApp.windows.contains {
@@ -177,6 +210,7 @@ private final class WindowCloseHandler: NSObject, NSWindowDelegate {
         Task { @MainActor in
             MainWindowCoordinator.preferredMainWindowVisible = false
             MainWindowCoordinator.updateDockVisibility()
+            MainWindowCoordinator.scheduleMainWindowTeardown()
         }
         return false
     }

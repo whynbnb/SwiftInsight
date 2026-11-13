@@ -83,4 +83,10 @@ final class MetricsHistoryStore {
         }
         return next
     }
+
+    /// 主窗口关闭、退回图标轨时释放历史缓冲
+    func reset() {
+        systemSamples.removeAll(keepingCapacity: false)
+        processSamples.removeAll(keepingCapacity: false)
+    }
 }

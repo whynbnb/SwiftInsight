@@ -928,4 +928,9 @@ enum ProcessClassifier {
         iconCache.setObject(image, forKey: cacheKey, cost: 16 * 16 * 4)
         return image
     }
+
+    /// 主窗口关闭后释放应用图标缓存（菜单栏不使用这些图标）
+    static func purgeIconCache() {
+        iconCache.removeAllObjects()
+    }
 }

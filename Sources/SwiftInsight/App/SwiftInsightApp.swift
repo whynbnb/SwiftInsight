@@ -63,7 +63,8 @@ struct SwiftInsightApp: App {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
 
-        if let existing = NSApp.windows.first(where: { $0.identifier?.rawValue == "about-swiftinsight" }) {
+        // 显式持有，避免关闭后无主窗口对象无法回收 / 重复创建
+        if let existing = AboutWindowHolder.window {
             existing.makeKeyAndOrderFront(nil)
             MainWindowCoordinator.updateDockVisibility()
             return
@@ -82,8 +83,15 @@ struct SwiftInsightApp: App {
         window.isReleasedWhenClosed = false
         window.center()
         window.makeKeyAndOrderFront(nil)
+        AboutWindowHolder.window = window
         MainWindowCoordinator.updateDockVisibility()
     }
+}
+
+/// 关于窗口单例持有：关闭后复用，避免每次打开都新建并泄漏
+@MainActor
+private enum AboutWindowHolder {
+    static var window: NSWindow?
 }
 
 /// Settings 在真正打开时再取 session，避免启动期过早初始化
