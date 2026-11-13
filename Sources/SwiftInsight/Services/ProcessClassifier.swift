@@ -795,6 +795,30 @@ enum ProcessClassifier {
         return nil
     }
 
+    /// 是否为 `.app` 的最外层主可执行文件（`X.app/Contents/MacOS/X`）。
+    /// 用于区分前台 App 与其包内的 JDK、Frameworks、辅助工具等后台进程。
+    static func isMainAppExecutable(path: String) -> Bool {
+        let parts = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        guard let appIdx = parts.firstIndex(where: { $0.hasSuffix(".app") }) else { return false }
+        // 必须是这一层 .app，且紧随其后就是 Contents/MacOS/<可执行文件>
+        guard appIdx + 4 == parts.count else { return false }
+        return parts[appIdx + 1] == "Contents" && parts[appIdx + 2] == "MacOS"
+    }
+
+    /// 以当前可执行文件为 `Contents/MacOS/<binary>` 的最近一层 `.app` 路径。
+    /// 不是 App 主可执行文件时返回 nil（避免借用宿主 App 的图标）。
+    private static func mainExecutableAppPath(path: String) -> String? {
+        let parts = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        for idx in stride(from: parts.count - 1, through: 0, by: -1) {
+            guard parts[idx].hasSuffix(".app") else { continue }
+            guard idx + 4 == parts.count,
+                  parts[idx + 1] == "Contents",
+                  parts[idx + 2] == "MacOS" else { return nil }
+            return parts[...idx].joined(separator: "/")
+        }
+        return nil
+    }
+
     private static let knownAppleAppNames: Set<String> = [
         "Safari", "Mail", "Messages", "FaceTime", "Photos", "Music", "TV",
         "News", "Maps", "Books", "Podcasts", "App Store", "System Settings",
@@ -832,7 +856,13 @@ enum ProcessClassifier {
             }
             return .daemon
         }
-        if path.contains(".app/") || (bundleID != nil && path.hasPrefix("/Applications/")) {
+        if path.contains(".app/") {
+            // 只有 .app 的主可执行文件才算前台 App。
+            // JBR/Java、Frameworks、Resources 中的运行时一律视为后台 helper，
+            // 例如 Android Studio.app/Contents/jbr/.../bin/java。
+            return isMainAppExecutable(path: path) ? .app : .helper
+        }
+        if bundleID != nil && path.hasPrefix("/Applications/") {
             return .app
         }
         if ["bash", "zsh", "sh", "fish", "tcsh", "csh", "dash"].contains(name) {
@@ -910,16 +940,13 @@ enum ProcessClassifier {
 
         let image: NSImage
         if !path.isEmpty {
-            var url = URL(fileURLWithPath: path)
-            var found: NSImage?
-            while url.path != "/" {
-                if url.pathExtension == "app" {
-                    found = NSWorkspace.shared.icon(forFile: url.path)
-                    break
-                }
-                url.deleteLastPathComponent()
+            if let appPath = mainExecutableAppPath(path: path) {
+                // 仅当进程是某个 App 的主可执行文件时使用该 App 图标
+                image = NSWorkspace.shared.icon(forFile: appPath)
+            } else {
+                // JDK / 运行时 / 辅助二进制：使用自身文件图标，避免套用宿主 App 图标
+                image = NSWorkspace.shared.icon(forFile: path)
             }
-            image = found ?? NSWorkspace.shared.icon(forFile: path)
         } else {
             image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: name) ?? NSImage()
         }
