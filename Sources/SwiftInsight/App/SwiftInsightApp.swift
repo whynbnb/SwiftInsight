@@ -29,7 +29,7 @@ struct SwiftInsightApp: App {
 
                 Button(L("cmd.show_all")) {
                     AppSession.shared.monitor.categoryFilter = nil
-                    AppSession.shared.monitor.showOnlyApps = false
+                    AppSession.shared.monitor.processScope = .all
                 }
                 Button(L("cmd.only_system")) {
                     AppSession.shared.monitor.categoryFilter = .appleSystem

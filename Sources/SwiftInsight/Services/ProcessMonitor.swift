@@ -65,7 +65,8 @@ final class ProcessMonitor: ObservableObject {
     @Published var categoryFilter: ProcessCategory? = nil {
         didSet { recomputeDisplayed() }
     }
-    @Published var showOnlyApps = false {
+    /// 范围筛选：全部 / 前台 App / 后台进程
+    @Published var processScope: ProcessScope = .all {
         didSet { recomputeDisplayed() }
     }
     /// 列表 / 应用聚合 / PPID 父子树
@@ -363,7 +364,7 @@ final class ProcessMonitor: ObservableObject {
         let filtered = Self.filterProcesses(
             processes: processes,
             categoryFilter: categoryFilter,
-            showOnlyApps: showOnlyApps,
+            processScope: processScope,
             filterText: filterText
         )
 
@@ -430,7 +431,7 @@ final class ProcessMonitor: ObservableObject {
     private static func filterProcesses(
         processes: [MonitoredProcess],
         categoryFilter: ProcessCategory?,
-        showOnlyApps: Bool,
+        processScope: ProcessScope,
         filterText: String
     ) -> [MonitoredProcess] {
         var list = processes
@@ -439,8 +440,8 @@ final class ProcessMonitor: ObservableObject {
             list = list.filter { $0.category == cat }
         }
 
-        if showOnlyApps {
-            list = list.filter { $0.kind == .app || $0.path.contains(".app/") }
+        if processScope != .all {
+            list = list.filter { processScope.matches($0) }
         }
 
         let q = filterText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()

@@ -124,7 +124,13 @@ struct SidebarView: View {
             }
 
             Section(L("sidebar.filter")) {
-                Toggle(L("sidebar.apps_only"), isOn: $monitor.showOnlyApps)
+                Picker(L("sidebar.filter"), selection: $monitor.processScope) {
+                    ForEach(ProcessScope.allCases) { scope in
+                        Text(scope.title).tag(scope)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
             }
 
             Section(L("sidebar.resource")) {

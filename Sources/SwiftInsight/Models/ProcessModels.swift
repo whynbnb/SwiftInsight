@@ -89,6 +89,32 @@ enum CategoryFilterItem: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
+/// 进程范围筛选：全部 / 前台 App / 后台进程
+enum ProcessScope: String, CaseIterable, Identifiable {
+    case all
+    case foregroundApps
+    case background
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: return L("scope.all")
+        case .foregroundApps: return L("scope.foreground")
+        case .background: return L("scope.background")
+        }
+    }
+
+    /// 前台 App = 位于 .app 包内的 GUI 进程；其余（守护进程/助手/shell 等）视为后台
+    func matches(_ process: MonitoredProcess) -> Bool {
+        switch self {
+        case .all: return true
+        case .foregroundApps: return process.kind == .app
+        case .background: return process.kind != .app
+        }
+    }
+}
+
 enum ProcessKind: String, Codable {
     case app
     case daemon
