@@ -3,9 +3,9 @@ import AppKit
 
 /// 应用菜单「关于 SwiftInsight」窗口内容
 struct AboutView: View {
-    private let repoURL = URL(string: "https://github.com/WHYBBE/SwiftInsight")!
-    private let licenseURL = URL(string: "https://github.com/WHYBBE/SwiftInsight/blob/main/LICENSE")!
-    private let repoDisplay = "WHYBBE/SwiftInsight"
+    private let repoURL = URL(string: "https://github.com/whynbnb/SwiftInsight")!
+    private let licenseURL = URL(string: "https://github.com/whynbnb/SwiftInsight/blob/main/LICENSE")!
+    private let repoDisplay = "whynbnb/SwiftInsight"
 
     private let labelWidth: CGFloat = 72
 

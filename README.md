@@ -6,7 +6,7 @@
   <img src="docs/app-icon.png" alt="SwiftInsight" width="128" />
 </p>
 
-> Built with Grok 4.5 / OpenCode vibe coding.
+> Vibe-coded with DeepSeek V4.1 Flash / OpenCode.
 
 A lightweight **Activity Monitor alternative** for macOS (Swift / SwiftUI).  
 Focus: **Apple vs third-party** resource breakdown, a **stable menu-bar panel**, dual/triple refresh tracks for low overhead, and an optional **root Helper** for protected metrics.
@@ -25,10 +25,13 @@ Focus: **Apple vs third-party** resource breakdown, a **stable menu-bar panel**,
 
 | Area | What you get |
 |------|----------------|
-| **Processes** | Live list with CPU / memory / threads / user / PID / path / Bundle ID |
+| **Processes** | Live CPU / memory / threads / user / PID / path / Bundle ID · click headers to sort |
 | **Classification** | Apple System · Apple Apps · Third-Party |
-| **Views** | Flat list · app aggregation tree · parent/child tree |
+| **Filters** | Category · scope (All / Foreground Apps / Background) · search |
+| **Views** | Flat list · grouped tree · **by-app** · parent/child tree |
 | **System strip** | CPU (cores, E/P), memory (app/wired/compressed), pressure, swap, net, disk, load |
+| **Top consumers** | Compact tabs: third-party CPU / memory, Apple system, Apple apps |
+| **Detail panel** | Right side (default) or bottom · closable · position remembered |
 | **History** | CPU / memory / category CPU charts |
 | **Menu bar** | Mini icon + frosted panel; independent top-list mode/count; resident without main window |
 | **Refresh** | Three tracks: **icon** / **panel** / **main** — separate intervals, lower idle cost |
@@ -40,8 +43,16 @@ Focus: **Apple vs third-party** resource breakdown, a **stable menu-bar panel**,
 ## Features
 
 ### Process monitoring
-- Search, category filters, sort, quit / force quit, Reveal in Finder  
-- Hold **⌃ Control** to pause **main-window** auto-refresh only (menu bar keeps sampling)  
+- Search, category filters, and a **scope filter in the table header**: All / Foreground Apps / Background processes  
+- **Click column headers to sort** (name / CPU % / memory / PID / threads), with an up/down arrow on the active column  
+- Quit / force quit, Reveal in Finder  
+- Hold **⌃ Control** to pause **main-window** auto-refresh only, or use the toolbar **Lock Data** button (menu bar keeps sampling)
+
+### Views and aggregation
+- **List** — one row per process  
+- **Grouped** — aggregate multi-process apps into expandable groups  
+- **By App** — group by the outermost `.app` bundle, merging nested helper apps (e.g. Edge helpers) and ignoring the foreground/background scope filter  
+- **Parent** — real PPID tree; detached processes of the same app (e.g. crashpad handlers) are attached to the app's main process
 
 ### System overview
 - **CPU** — user/system, per-core rings (efficiency / performance colors), adaptive multi-row or bar layout for high core counts  
@@ -49,6 +60,20 @@ Focus: **Apple vs third-party** resource breakdown, a **stable menu-bar panel**,
 - **Memory pressure** — aligned with Activity Monitor jetsam (`kern.memorystatus_vm_pressure_level`)  
 - Swap, network throughput, page in/out, load average  
 - Optional **CPU frequency / temperature** when the privileged Helper is installed  
+
+### Top consumers sidebar
+- Four compact tabs, with icons indicating **CPU** vs **memory**:
+  - Third-party CPU · Third-party memory · Apple System · Apple Apps
+- The tab selection is remembered with the rest of the view state
+
+### Detail panel
+- Position: **right side (default)** or **bottom**, configurable in Settings  
+- **Close button** clears the current selection  
+- Adapts its layout: vertical header and stacked history charts on the right, single row at the bottom
+
+### View state memory
+- Remembers category, scope, view mode, sorting, and the top-consumers tab  
+- Can be disabled in **Settings → General → View state** (“Remember view state”)
 
 ### Three-track refresh (low overhead)
 | Track | Active when | Samples | Default | Options |
@@ -64,7 +89,7 @@ Focus: **Apple vs third-party** resource breakdown, a **stable menu-bar panel**,
 ### Menu bar
 - Icon modes: **CPU only** · **MEM only** · **CPU + MEM** dual bars (default: CPU + MEM)  
 - Panel: pressure + memory rings, E/P core strip, category composition, Top CPU / Top memory  
-- **Top list mode** independent of the main window: **List** · **Grouped** · **Parent** (default: List)  
+- **Top list mode** independent of the main window: **List** · **Grouped** · **By App** · **Parent** (default: List)  
 - **Top count**: 3–15 per column (default **8**)  
 - Section cards use higher-contrast fill + hairline border (light/dark adaptive on frosted material)  
 - Footer: open main window, quit, **Activity Monitor** / **System Information** (real app icons)  
@@ -73,7 +98,7 @@ Focus: **Apple vs third-party** resource breakdown, a **stable menu-bar panel**,
 
 ### Window / Dock / launch
 - Main window is created **on demand** (AppKit); no SwiftUI `WindowGroup` at launch → **no flash** when starting menu-bar-only  
-- Closing the main window **hides** it (app stays in the menu bar); does not quit  
+- Closing the main window **hides** it (app stays in the menu bar); the window is released shortly after, and reopens on demand  
 - Remembers whether the main window was visible last quit (`launchMainWindowVisible`); next launch restores that state  
 - Dock icon hides when no main / settings / about window is visible  
 - Reopen: menu bar **Full Window** / context menu / Dock click / **⌘0**  
@@ -81,7 +106,7 @@ Focus: **Apple vs third-party** resource breakdown, a **stable menu-bar panel**,
 ### Settings (tabbed)
 | Tab | Contents |
 |-----|----------|
-| **General** | Language (System / 中文 / English) · Theme · **Launch at Login** (`SMAppService`) |
+| **General** | Language (System / 中文 / English) · Theme · Detail panel position · Remember view state · **Launch at Login** (`SMAppService`) |
 | **Refresh** | Main-window interval · notes for Control-pause |
 | **Menu Bar** | Icon mode · icon interval · panel interval · top-list mode · top count |
 | **Helper** | Status · install / uninstall (admin password) · recheck |
@@ -195,11 +220,11 @@ docs/                         # Screenshots & logo
 ### Architecture notes
 - **AppSession** — process-level monitor / menu bar / prefs bootstrap  
 - **MainWindowCoordinator** — on-demand `NSWindow`, launch preference, Dock policy  
-- **ProcessMonitor** — icon / panel / full sampling tracks  
+- **ProcessMonitor** — icon / panel / full sampling tracks, filtering and sorting  
 - Settings-only SwiftUI `Scene`; main UI hosted via AppKit when needed  
 
 ---
 
 ## License
 
-[MIT](LICENSE) © 2026 [0x574859](https://github.com/WHYBBE) / [WHYBBE/SwiftInsight](https://github.com/WHYBBE/SwiftInsight)
+[MIT](LICENSE) © 2026 [whynbnb/SwiftInsight](https://github.com/whynbnb/SwiftInsight)

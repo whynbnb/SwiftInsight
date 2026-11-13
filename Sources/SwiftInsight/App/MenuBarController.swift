@@ -461,7 +461,7 @@ final class MenuBarController: NSObject, ObservableObject {
     @objc private func quitFromMenu() { quit() }
 
     @objc private func openGitHubFromMenu() {
-        guard let url = URL(string: "https://github.com/WHYBBE/SwiftInsight") else { return }
+        guard let url = URL(string: "https://github.com/whynbnb/SwiftInsight") else { return }
         NSWorkspace.shared.open(url)
     }
 
