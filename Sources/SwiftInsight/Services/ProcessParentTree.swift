@@ -58,6 +58,10 @@ enum ProcessParentTree {
             roots.append(p)
         }
 
+        // 父链断裂（如 crashpad_handler 被 launchd 接管）但同属一个应用的根，
+        // 合并到应用主进程下，避免同一 App 在父子视图里散成多个顶层节点。
+        roots = mergeDetachedAppRoots(roots, all: byPID, childrenMap: &childrenMap)
+
         func build(_ p: MonitoredProcess, ancestry: Set<Int32>) -> Node {
             var nextAncestry = ancestry
             nextAncestry.insert(p.pid)
@@ -72,6 +76,36 @@ enum ProcessParentTree {
         }
 
         return roots.map { build($0, ancestry: []) }
+    }
+
+    /// 将父链已断裂、但与应用同属 `app:` / `bid:` 组的根进程挂到主进程下。
+    /// 典型：`msedge_crashpad_handler` 的 PPID 被 launchd 接管。
+    private static func mergeDetachedAppRoots(
+        _ roots: [MonitoredProcess],
+        all: [Int32: MonitoredProcess],
+        childrenMap: inout [Int32: [MonitoredProcess]]
+    ) -> [MonitoredProcess] {
+        guard roots.count > 1 else { return roots }
+
+        // 只合并有明确应用身份的根，避免把同名 daemon 误并到一起
+        var buckets: [String: [MonitoredProcess]] = [:]
+        for root in roots {
+            let key = ProcessAggregator.groupKey(for: root, all: all)
+            guard key.hasPrefix("app:") || key.hasPrefix("bid:") else { continue }
+            buckets[key, default: []].append(root)
+        }
+
+        var absorbed: Set<Int32> = []
+        for group in buckets.values where group.count > 1 {
+            let primary = ProcessAggregator.pickPrimary(group)
+            for p in group where p.pid != primary.pid {
+                childrenMap[primary.pid, default: []].append(p)
+                absorbed.insert(p.pid)
+            }
+        }
+
+        guard !absorbed.isEmpty else { return roots }
+        return roots.filter { !absorbed.contains($0.pid) }
     }
 
     /// 系统/用户 launchd：几乎所有进程的公共祖先，展示时跳过这一层

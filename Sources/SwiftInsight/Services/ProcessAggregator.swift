@@ -220,7 +220,8 @@ enum ProcessAggregator {
         return n
     }
 
-    private static func pickPrimary(_ group: [MonitoredProcess]) -> MonitoredProcess {
+    /// 同组主进程选择（父链断裂的根进程合并时复用）
+    static func pickPrimary(_ group: [MonitoredProcess]) -> MonitoredProcess {
         // 优先：.app 主可执行文件 / 非 Helper 名 / 最大内存 / 最小 pid
         let scored = group.max { a, b in
             primaryScore(a) < primaryScore(b)
