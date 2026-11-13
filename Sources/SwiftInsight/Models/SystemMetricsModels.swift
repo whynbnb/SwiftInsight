@@ -151,10 +151,27 @@ enum RankingTab: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .thirdCPU: return L("rank.tab.third_cpu")
-        case .thirdMemory: return L("rank.tab.third_mem")
+        case .thirdCPU: return L("rank.third_cpu")
+        case .thirdMemory: return L("rank.third_mem")
+        case .systemCPU: return L("rank.sys_cpu")
+        case .appleAppCPU: return L("rank.app_cpu")
+        }
+    }
+
+    /// 压缩后的标签文案（指标用符号表示）
+    var shortTitle: String {
+        switch self {
+        case .thirdCPU, .thirdMemory: return L("rank.tab.third")
         case .systemCPU: return L("rank.tab.sys_cpu")
         case .appleAppCPU: return L("rank.tab.app_cpu")
+        }
+    }
+
+    /// CPU 用 cpu 符号，内存用 memorychip 符号
+    var symbolName: String {
+        switch self {
+        case .thirdCPU, .systemCPU, .appleAppCPU: return "cpu"
+        case .thirdMemory: return "memorychip"
         }
     }
 

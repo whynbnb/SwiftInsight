@@ -436,18 +436,7 @@ struct CategoryRankingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Picker(
-                L("sidebar.who"),
-                selection: Binding(get: { rankingTab }, set: onSelectTab)
-            ) {
-                ForEach(RankingTab.allCases) { tab in
-                    Text(tab.title).tag(tab)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .controlSize(.small)
-            .help(L("sidebar.who"))
+            tabBar
 
             let items = rankingTab.items(from: rankings)
             if items.isEmpty {
@@ -466,7 +455,9 @@ struct CategoryRankingsView: View {
                                     Text("\(index + 1).")
                                         .font(.caption2.monospacedDigit())
                                         .foregroundStyle(.tertiary)
-                                        .frame(width: 14, alignment: .trailing)
+                                        .lineLimit(1)
+                                        .fixedSize()
+                                        .frame(minWidth: 22, alignment: .trailing)
                                     Text(item.process.name)
                                         .font(.caption)
                                         .lineLimit(1)
@@ -486,6 +477,46 @@ struct CategoryRankingsView: View {
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    /// 压缩标签栏：CPU / 内存用符号区分，文字只保留分类
+    private var tabBar: some View {
+        HStack(spacing: 2) {
+            ForEach(RankingTab.allCases) { tab in
+                tabButton(tab)
+            }
+        }
+        .padding(2)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(0.07))
+        )
+    }
+
+    private func tabButton(_ tab: RankingTab) -> some View {
+        let selected = rankingTab == tab
+        return Button {
+            onSelectTab(tab)
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: tab.symbolName)
+                    .font(.system(size: 10, weight: .semibold))
+                Text(tab.shortTitle)
+                    .font(.caption)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
+            .foregroundStyle(selected ? Color.white : Color.primary)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(selected ? Color.accentColor : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(tab.title)
+        .accessibilityLabel(tab.title)
     }
 }
 
