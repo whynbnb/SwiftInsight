@@ -24,6 +24,8 @@ struct ProcessDisplayRow: Identifiable, Hashable {
 enum ListDisplayMode: String, CaseIterable, Identifiable {
     case flat
     case tree
+    /// 按应用合并：忽略前后台筛选，嵌套 App（如 Edge Helper）归入最外层应用
+    case application
     case parentTree
 
     var id: String { rawValue }
@@ -32,6 +34,7 @@ enum ListDisplayMode: String, CaseIterable, Identifiable {
         switch self {
         case .flat: return L("mode.flat")
         case .tree: return L("mode.tree")
+        case .application: return L("mode.application")
         case .parentTree: return L("mode.parentTree")
         }
     }

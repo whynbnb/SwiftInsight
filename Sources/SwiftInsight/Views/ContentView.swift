@@ -134,6 +134,8 @@ struct SidebarView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
+                // 按应用聚合时忽略范围筛选
+                .disabled(monitor.displayMode == .application)
             }
 
             Section(L("sidebar.resource")) {

@@ -29,52 +29,69 @@ struct ProcessTableView: View {
         HStack(spacing: 12) {
             Picker(L("toolbar.view"), selection: $monitor.displayMode) {
                 ForEach(ListDisplayMode.allCases) { mode in
-                    Text(mode.displayName).tag(mode)
+                    Text(mode.displayName)
+                        .lineLimit(1)
+                        .tag(mode)
                 }
             }
             .pickerStyle(.segmented)
-            .frame(width: 200)
+            // 固定为内容宽度：窗口变窄时不再压缩导致文字竖排
+            .fixedSize()
 
             Divider().frame(height: 16)
 
-            Text(L("table.sort"))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            ForEach(SortColumn.allCases) { col in
-                Button {
-                    monitor.toggleSort(col)
-                } label: {
-                    HStack(spacing: 2) {
-                        Text(col.displayName)
-                            .font(.caption.weight(monitor.sortColumn == col ? .semibold : .regular))
-                        if monitor.sortColumn == col {
-                            Image(systemName: monitor.sortAscending ? "chevron.up" : "chevron.down")
-                                .font(.caption2)
+            // 排序项放在横向滚动容器里，窄窗口下只滚动，不换行/不挤压
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    Text(L("table.sort"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                    ForEach(SortColumn.allCases) { col in
+                        Button {
+                            monitor.toggleSort(col)
+                        } label: {
+                            HStack(spacing: 2) {
+                                Text(col.displayName)
+                                    .lineLimit(1)
+                                    .font(.caption.weight(monitor.sortColumn == col ? .semibold : .regular))
+                                if monitor.sortColumn == col {
+                                    Image(systemName: monitor.sortAscending ? "chevron.up" : "chevron.down")
+                                        .font(.caption2)
+                                }
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(
+                                monitor.sortColumn == col
+                                    ? Color.accentColor.opacity(0.15)
+                                    : Color.clear,
+                                in: Capsule()
+                            )
                         }
+                        .buttonStyle(.plain)
+                        .fixedSize()
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(
-                        monitor.sortColumn == col
-                            ? Color.accentColor.opacity(0.15)
-                            : Color.clear,
-                        in: Capsule()
-                    )
                 }
-                .buttonStyle(.plain)
             }
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
+
             Text(countLabel)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+                .lineLimit(1)
+                .fixedSize()
+                .frame(minWidth: 96, alignment: .trailing)
         }
+        // 固定高度，避免每次刷新时表头高度抖动导致整体闪烁
+        .frame(height: 34)
         .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.vertical, 4)
     }
 
     private var countLabel: String {
-        if monitor.displayMode == .tree {
+        if monitor.displayMode == .tree || monitor.displayMode == .application {
             let groups = monitor.displayRows.filter { $0.depth == 0 }.count
             return String(format: L("table.groups"), groups, monitor.displayRows.count)
         }

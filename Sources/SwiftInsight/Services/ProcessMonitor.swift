@@ -386,11 +386,15 @@ final class ProcessMonitor: ObservableObject {
     }
 
     private func recomputeDisplayed() {
+        // 按应用聚合时忽略前后台范围筛选，避免同应用的 helper 被拆散
+        let effectiveScope: ProcessScope = displayMode == .application ? .all : processScope
+        let outermostApp = displayMode == .application
         let filtered = Self.filterProcesses(
             processes: processes,
             categoryFilter: categoryFilter,
-            processScope: processScope,
-            filterText: filterText
+            processScope: effectiveScope,
+            filterText: filterText,
+            outermostApp: outermostApp
         )
 
         let rows: [ProcessDisplayRow]
@@ -409,8 +413,8 @@ final class ProcessMonitor: ObservableObject {
                     groupKey: "pid:\(p.pid)"
                 )
             }
-        case .tree:
-            let forest = ProcessAggregator.buildForest(from: filtered)
+        case .tree, .application:
+            let forest = ProcessAggregator.buildForest(from: filtered, outermostApp: outermostApp)
             rows = ProcessAggregator.flatten(
                 forest,
                 expanded: expandedGroups,
@@ -457,7 +461,8 @@ final class ProcessMonitor: ObservableObject {
         processes: [MonitoredProcess],
         categoryFilter: ProcessCategory?,
         processScope: ProcessScope,
-        filterText: String
+        filterText: String,
+        outermostApp: Bool = false
     ) -> [MonitoredProcess] {
         var list = processes
 
@@ -482,9 +487,9 @@ final class ProcessMonitor: ObservableObject {
             if matched.isEmpty {
                 list = []
             } else {
-                let keys = Set(matched.map { ProcessAggregator.groupKey(for: $0, all: Dictionary(uniqueKeysWithValues: processes.map { ($0.pid, $0) })) })
+                let keys = Set(matched.map { ProcessAggregator.groupKey(for: $0, all: Dictionary(uniqueKeysWithValues: processes.map { ($0.pid, $0) }), outermostApp: outermostApp) })
                 let byPID = Dictionary(uniqueKeysWithValues: processes.map { ($0.pid, $0) })
-                list = list.filter { keys.contains(ProcessAggregator.groupKey(for: $0, all: byPID)) }
+                list = list.filter { keys.contains(ProcessAggregator.groupKey(for: $0, all: byPID, outermostApp: outermostApp)) }
             }
         }
         return list
@@ -762,6 +767,8 @@ final class ProcessMonitor: ObservableObject {
             candidates = processes
         case .tree:
             candidates = ProcessAggregator.buildForest(from: processes).map(\.aggregatedProcess)
+        case .application:
+            candidates = ProcessAggregator.buildForest(from: processes, outermostApp: true).map(\.aggregatedProcess)
         case .parentTree:
             candidates = ProcessParentTree.buildForest(from: processes).map { node in
                 var p = node.process

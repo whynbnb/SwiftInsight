@@ -205,6 +205,7 @@ enum L10n {
         // Display / sort
         "mode.flat": "列表",
         "mode.tree": "聚合",
+        "mode.application": "按应用",
         "mode.parentTree": "父子",
         "sort.cpu": "CPU",
         "sort.memory": "内存",
@@ -448,6 +449,7 @@ enum L10n {
 
         "mode.flat": "List",
         "mode.tree": "Grouped",
+        "mode.application": "By App",
         "mode.parentTree": "Parent",
         "sort.cpu": "CPU",
         "sort.memory": "Memory",

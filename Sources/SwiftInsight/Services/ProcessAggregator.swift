@@ -28,13 +28,13 @@ enum ProcessAggregator {
 
     // MARK: - Public
 
-    static func buildForest(from processes: [MonitoredProcess]) -> [Node] {
+    static func buildForest(from processes: [MonitoredProcess], outermostApp: Bool = false) -> [Node] {
         guard !processes.isEmpty else { return [] }
 
         let byPID = Dictionary(uniqueKeysWithValues: processes.map { ($0.pid, $0) })
         var groupOf: [Int32: String] = [:]
         for p in processes {
-            groupOf[p.pid] = groupKey(for: p, all: byPID)
+            groupOf[p.pid] = groupKey(for: p, all: byPID, outermostApp: outermostApp)
         }
 
         // 按组收集
@@ -76,9 +76,13 @@ enum ProcessAggregator {
 
     // MARK: - Group key
 
-    static func groupKey(for process: MonitoredProcess, all: [Int32: MonitoredProcess]) -> String {
-        // 1) 显式 .app 路径
-        if let appPath = appBundlePath(from: process.path) {
+    static func groupKey(
+        for process: MonitoredProcess,
+        all: [Int32: MonitoredProcess],
+        outermostApp: Bool = false
+    ) -> String {
+        // 1) 显式 .app 路径（按应用模式下取最外层 .app）
+        if let appPath = appBundlePath(from: process.path, outermost: outermostApp) {
             return "app:" + appPath
         }
 
@@ -88,12 +92,12 @@ enum ProcessAggregator {
         }
 
         // 3) 沿父链寻找同名应用族
-        if let parentKey = inheritGroupFromParent(process, all: all) {
+        if let parentKey = inheritGroupFromParent(process, all: all, outermostApp: outermostApp) {
             return parentKey
         }
 
         // 4) 可执行文件目录（Helpers 常与主程序同根）
-        if let root = executableFamilyRoot(path: process.path, name: process.name) {
+        if let root = executableFamilyRoot(path: process.path, name: process.name, outermost: outermostApp) {
             return "root:" + root
         }
 
@@ -105,13 +109,17 @@ enum ProcessAggregator {
         "pid:\(p.pid)"
     }
 
-    private static func inheritGroupFromParent(_ process: MonitoredProcess, all: [Int32: MonitoredProcess]) -> String? {
+    private static func inheritGroupFromParent(
+        _ process: MonitoredProcess,
+        all: [Int32: MonitoredProcess],
+        outermostApp: Bool
+    ) -> String? {
         var current = process.ppid
         var guardCount = 0
         while current > 0, guardCount < 8 {
             guardCount += 1
             guard let parent = all[current] else { break }
-            if let appPath = appBundlePath(from: parent.path) {
+            if let appPath = appBundlePath(from: parent.path, outermost: outermostApp) {
                 // 子进程在同一 .app 或路径相关
                 if process.path.hasPrefix(appPath) || relatedNames(process.name, parent.name) {
                     return "app:" + appPath
@@ -123,7 +131,7 @@ enum ProcessAggregator {
                 }
             }
             if relatedNames(process.name, parent.name) {
-                if let appPath = appBundlePath(from: parent.path) {
+                if let appPath = appBundlePath(from: parent.path, outermost: outermostApp) {
                     return "app:" + appPath
                 }
                 return "name:" + familyName(parent.name)
@@ -301,13 +309,17 @@ enum ProcessAggregator {
 
     // MARK: - Identity helpers
 
-    static func appBundlePath(from path: String) -> String? {
+    static func appBundlePath(from path: String, outermost: Bool = false) -> String? {
         guard !path.isEmpty else { return nil }
         let parts = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
-        if let idx = parts.lastIndex(where: { $0.hasSuffix(".app") }) {
-            return parts[...idx].joined(separator: "/")
+        let idx: Int?
+        if outermost {
+            idx = parts.firstIndex(where: { $0.hasSuffix(".app") })
+        } else {
+            idx = parts.lastIndex(where: { $0.hasSuffix(".app") })
         }
-        return nil
+        guard let idx else { return nil }
+        return parts[...idx].joined(separator: "/")
     }
 
     static func familyBundleID(_ bid: String) -> String {
@@ -359,18 +371,18 @@ enum ProcessAggregator {
         return false
     }
 
-    private static func executableFamilyRoot(path: String, name: String) -> String? {
+    private static func executableFamilyRoot(path: String, name: String, outermost: Bool) -> String? {
         guard !path.isEmpty else { return nil }
         let url = URL(fileURLWithPath: path)
         let dir = url.deletingLastPathComponent()
         // .../App.app/Contents/Frameworks/App Helper.app/Contents/MacOS → climb to .app
-        if let app = appBundlePath(from: path) {
+        if let app = appBundlePath(from: path, outermost: outermost) {
             return app
         }
         // Tauri / sidecar: same directory family
         let parent = dir.path
         if parent.contains("Frameworks") || parent.contains("Helpers") {
-            return appBundlePath(from: parent) ?? parent
+            return appBundlePath(from: parent, outermost: outermost) ?? parent
         }
         return nil
     }
