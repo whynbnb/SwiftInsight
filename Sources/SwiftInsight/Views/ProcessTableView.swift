@@ -4,6 +4,7 @@ import AppKit
 /// AppKit NSTableView 封装：系统级条纹、流畅滚动；支持聚合树缩进与展开
 struct ProcessTableView: View {
     @EnvironmentObject private var monitor: ProcessMonitor
+    @EnvironmentObject private var groupStore: ProcessGroupStore
     @Binding var selectedPID: Int32?
 
     var body: some View {
@@ -14,12 +15,29 @@ struct ProcessTableView: View {
                 selectedPID: $selectedPID,
                 sortColumn: monitor.sortColumn,
                 sortAscending: monitor.sortAscending,
+                groups: groupStore.groups,
                 onSort: { monitor.toggleSort($0) },
                 onTerminate: { pid, force in
                     monitor.terminate(pid: pid, force: force)
                 },
                 onFilterCategory: { category in
-                    monitor.categoryFilter = category
+                    monitor.selectCategory(category)
+                },
+                onAddToGroup: { pid, groupID in
+                    guard let process = monitor.processes.first(where: { $0.pid == pid }) else { return }
+                    groupStore.addProcess(process, to: groupID)
+                    monitor.selectGroup(groupID)
+                },
+                onCreateGroupWithProcess: { pid in
+                    guard let process = monitor.processes.first(where: { $0.pid == pid }) else { return }
+                    var group = ProcessFilterGroup(
+                        name: ProcessAggregator.familyName(process.name),
+                        symbolName: ProcessFilterGroup.symbolChoices[0],
+                        isDynamic: true
+                    )
+                    group.rules = [ProcessGroupMatcher.rule(for: process)]
+                    let id = groupStore.add(group)
+                    monitor.selectGroup(id)
                 },
                 onToggleExpand: { key in
                     monitor.toggleExpanded(key)
@@ -55,6 +73,12 @@ struct ProcessTableView: View {
                 .fixedSize()
 
             ScopeFilterControl()
+
+            if let group = groupStore.groups.first(where: { $0.id == monitor.groupFilterID }) {
+                GroupFilterChip(group: group) {
+                    monitor.selectGroup(nil)
+                }
+            }
 
             Spacer(minLength: 8)
 
@@ -107,9 +131,12 @@ private struct ProcessNSTable: NSViewRepresentable {
     @Binding var selectedPID: Int32?
     let sortColumn: SortColumn
     let sortAscending: Bool
+    let groups: [ProcessFilterGroup]
     var onSort: (SortColumn) -> Void
     var onTerminate: (Int32, Bool) -> Void
     var onFilterCategory: (ProcessCategory) -> Void
+    var onAddToGroup: (Int32, UUID) -> Void
+    var onCreateGroupWithProcess: (Int32) -> Void
     var onToggleExpand: (String) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -672,6 +699,48 @@ extension ProcessNSTable.Coordinator: NSMenuDelegate {
         filter.target = self
         filter.representedObject = process.category.rawValue
         menu.addItem(filter)
+
+        let groupsItem = NSMenuItem(title: L("menu.groups"), action: nil, keyEquivalent: "")
+        let groupMenu = NSMenu()
+        if parent.groups.isEmpty {
+            let empty = NSMenuItem(title: L("group.empty_hint"), action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            groupMenu.addItem(empty)
+        } else {
+            for group in parent.groups {
+                let add = NSMenuItem(title: group.name, action: #selector(addToGroup(_:)), keyEquivalent: "")
+                add.target = self
+                add.representedObject = AddToGroupPayload(pid: process.pid, groupID: group.id)
+                groupMenu.addItem(add)
+            }
+        }
+        groupMenu.addItem(.separator())
+        let create = NSMenuItem(title: L("menu.create_group"), action: #selector(createGroupWithProcess(_:)), keyEquivalent: "")
+        create.target = self
+        create.representedObject = process.pid
+        groupMenu.addItem(create)
+        groupsItem.submenu = groupMenu
+        menu.addItem(groupsItem)
+    }
+
+    private final class AddToGroupPayload: NSObject {
+        let pid: Int32
+        let groupID: UUID
+
+        init(pid: Int32, groupID: UUID) {
+            self.pid = pid
+            self.groupID = groupID
+        }
+    }
+
+    @objc private func addToGroup(_ sender: NSMenuItem) {
+        guard let payload = sender.representedObject as? AddToGroupPayload else { return }
+        parent.onAddToGroup(payload.pid, payload.groupID)
+    }
+
+    @objc private func createGroupWithProcess(_ sender: NSMenuItem) {
+        guard let pid = sender.representedObject as? Int32 else { return }
+        parent.onCreateGroupWithProcess(pid)
     }
 
     @objc private func toggleExpand(_ sender: NSMenuItem) {

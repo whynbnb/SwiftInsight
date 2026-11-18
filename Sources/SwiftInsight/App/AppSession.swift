@@ -11,6 +11,7 @@ final class AppSession: ObservableObject {
     let controlKeyMonitor = ControlKeyMonitor()
     let menuBar = MenuBarController()
     let prefs = AppPreferences.shared
+    let groupStore = ProcessGroupStore.shared
 
     private var didBootstrap = false
     private var languageCancellable: AnyCancellable?

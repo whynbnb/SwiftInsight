@@ -72,6 +72,12 @@ final class ProcessMonitor: ObservableObject {
     @Published var processScope: ProcessScope = .all {
         didSet { persistViewState(); recomputeDisplayed() }
     }
+    /// 自定义分组筛选（与分类筛选互斥；nil = 不使用分组）
+    @Published var groupFilterID: UUID? = nil {
+        didSet { persistViewState(); recomputeDisplayed() }
+    }
+    /// 各自定义分组当前命中的进程数（侧栏展示用）
+    @Published private(set) var groupCounts: [UUID: Int] = [:]
     /// 列表 / 应用聚合 / 按应用 / PPID 父子树
     @Published var displayMode: ListDisplayMode = .tree {
         didSet { persistViewState(); recomputeDisplayed() }
@@ -111,6 +117,7 @@ final class ProcessMonitor: ObservableObject {
     private let detailScanInterval: TimeInterval = 5.0
     private let sampleQueue = DispatchQueue(label: "com.swiftinsight.process-sample", qos: .utility)
     private let historyStore = MetricsHistoryStore()
+    private var groupStoreCancellable: AnyCancellable?
 
     private static let mainIntervalKey = "mainRefreshInterval"
     private static let iconIntervalKey = "menuBarIconInterval"
@@ -121,6 +128,7 @@ final class ProcessMonitor: ObservableObject {
     private static let viewModeKey = "viewDisplayMode"
     private static let viewSortKey = "viewSortColumn"
     private static let viewSortAscendingKey = "viewSortAscending"
+    private static let viewGroupKey = "viewGroupFilter"
 
     /// 状态栏文案
     var statusText: String {
@@ -163,6 +171,7 @@ final class ProcessMonitor: ObservableObject {
             menuBarPanelInterval = saved
         }
         restoreViewStateIfNeeded()
+        bindGroupStore()
         isRunning = true
         // 未知分类已从 UI 移除；若仍挂着旧筛选会看起来像「没数据」
         if categoryFilter == .unknown {
@@ -192,6 +201,61 @@ final class ProcessMonitor: ObservableObject {
         privilegedHelperRoot = status.root
     }
 
+    // MARK: - Custom groups
+
+    /// 分组定义变化（增删改）后重建命中计数与列表
+    private func bindGroupStore() {
+        if groupStoreCancellable == nil {
+            groupStoreCancellable = ProcessGroupStore.shared.$groups
+                .dropFirst()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] groups in
+                    guard let self else { return }
+                    if let id = self.groupFilterID, !groups.contains(where: { $0.id == id }) {
+                        self.groupFilterID = nil
+                    }
+                    self.recomputeGroupCounts()
+                    self.recomputeDisplayed()
+                }
+        }
+        recomputeGroupCounts()
+    }
+
+    /// 选择自定义分组（nil = 取消）；与内置分类互斥
+    func selectGroup(_ id: UUID?) {
+        if id != nil {
+            categoryFilter = nil
+            // 分组已经界定了成员范围，避免旧的范围筛选把组内进程藏起来
+            if processScope != .all { processScope = .all }
+        }
+        groupFilterID = id
+    }
+
+    /// 选择内置分类（nil = 全部）；选择分类会退出分组筛选
+    func selectCategory(_ category: ProcessCategory?) {
+        if category != nil { groupFilterID = nil }
+        categoryFilter = category
+    }
+
+    /// 统计每个自定义分组命中的进程数（侧栏角标）
+    private func recomputeGroupCounts() {
+        let groups = ProcessGroupStore.shared.groups
+        guard !groups.isEmpty else {
+            if !groupCounts.isEmpty { groupCounts = [:] }
+            return
+        }
+        var counts: [UUID: Int] = [:]
+        counts.reserveCapacity(groups.count)
+        for group in groups {
+            var count = 0
+            for p in processes where ProcessGroupMatcher.matches(p, group: group) {
+                count += 1
+            }
+            counts[group.id] = count
+        }
+        if counts != groupCounts { groupCounts = counts }
+    }
+
     // MARK: - View state persistence
 
     /// 记住分类 / 前后台筛选 / 视图 / 排序（可在设置中关闭）
@@ -203,6 +267,7 @@ final class ProcessMonitor: ObservableObject {
         d.set(displayMode.rawValue, forKey: Self.viewModeKey)
         d.set(sortColumn.rawValue, forKey: Self.viewSortKey)
         d.set(sortAscending, forKey: Self.viewSortAscendingKey)
+        d.set(groupFilterID?.uuidString, forKey: Self.viewGroupKey)
     }
 
     private func restoreViewStateIfNeeded() {
@@ -215,6 +280,7 @@ final class ProcessMonitor: ObservableObject {
         let sortRaw = d.string(forKey: Self.viewSortKey)
         let hasAscending = d.object(forKey: Self.viewSortAscendingKey) != nil
         let ascending = d.bool(forKey: Self.viewSortAscendingKey)
+        let groupRaw = d.string(forKey: Self.viewGroupKey)
 
         if let catRaw, catRaw != ProcessCategory.unknown.rawValue {
             categoryFilter = ProcessCategory(rawValue: catRaw)
@@ -230,6 +296,12 @@ final class ProcessMonitor: ObservableObject {
         }
         if hasAscending {
             sortAscending = ascending
+        }
+        if let groupRaw, let id = UUID(uuidString: groupRaw),
+           ProcessGroupStore.shared.groups.contains(where: { $0.id == id }) {
+            // 分组筛选优先：清除内置分类，避免两者叠加导致组内进程被藏起来
+            groupFilterID = id
+            categoryFilter = nil
         }
     }
 
@@ -328,6 +400,7 @@ final class ProcessMonitor: ObservableObject {
         if !menuBarMemoryTops.isEmpty { menuBarMemoryTops = [] }
         lastProcessSample = []
         summary = ResourceSummary()
+        if !groupCounts.isEmpty { groupCounts = [:] }
         previousCPU = [:]
         historyStore.reset()
         ProcessClassifier.purgeIconCache()
@@ -450,13 +523,17 @@ final class ProcessMonitor: ObservableObject {
         // 按应用聚合时忽略前后台范围筛选，避免同应用的 helper 被拆散
         let effectiveScope: ProcessScope = displayMode == .application ? .all : processScope
         let outermostApp = displayMode == .application
-        let filtered = Self.filterProcesses(
+        var filtered = Self.filterProcesses(
             processes: processes,
             categoryFilter: categoryFilter,
             processScope: effectiveScope,
             filterText: filterText,
             outermostApp: outermostApp
         )
+        // 自定义分组：在分类/范围/搜索之上再筛一层
+        if let group = ProcessGroupStore.shared.group(with: groupFilterID) {
+            filtered = filtered.filter { ProcessGroupMatcher.matches($0, group: group) }
+        }
 
         let rows: [ProcessDisplayRow]
         switch displayMode {
@@ -724,6 +801,7 @@ final class ProcessMonitor: ObservableObject {
         publishHistory()
 
         recomputeDisplayed()
+        recomputeGroupCounts()
         refreshInspectedDetail(force: false)
         finishSample()
     }

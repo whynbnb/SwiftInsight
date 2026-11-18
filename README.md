@@ -27,7 +27,7 @@ Focus: **Apple vs third-party** resource breakdown, a **stable menu-bar panel**,
 |------|----------------|
 | **Processes** | Live CPU / memory / threads / user / PID / path / Bundle ID · click headers to sort |
 | **Classification** | Apple System · Apple Apps · Third-Party |
-| **Filters** | Category · scope (All / Foreground Apps / Background) · search |
+| **Filters** | Category · **custom groups** (dynamic rules / static apps) · scope · search |
 | **Views** | Flat list · grouped tree · **by-app** · parent/child tree |
 | **System strip** | CPU (cores, E/P), memory (app/wired/compressed), pressure, swap, net, disk, load |
 | **Top consumers** | Compact tabs: third-party CPU / memory, Apple system, Apple apps |
@@ -47,6 +47,15 @@ Focus: **Apple vs third-party** resource breakdown, a **stable menu-bar panel**,
 - **Click column headers to sort** (name / CPU % / memory / PID / threads), with an up/down arrow on the active column  
 - Quit / force quit, Reveal in Finder  
 - Hold **⌃ Control** to pause **main-window** auto-refresh only, or use the toolbar **Lock Data** button (menu bar keeps sampling)
+
+### Custom groups
+- Create your own groups in the sidebar (＋), then click one to filter the whole process list
+- **Dynamic** groups match by rules: Bundle ID prefix (helper families included) · name contains · path contains · user
+- **Static** groups hold a fixed app list you curate
+- Add apps from the global view: right-click a row → **Add to Group**, or **New Group with This Process** to create a group from that app
+- The group editor searches all running apps, so membership can be changed at any time
+- The active group shows as a removable chip in the table header; category and group filters are mutually exclusive
+- Group selections follow **Remember view state**
 
 ### Views and aggregation
 - **List** — one row per process  
@@ -72,7 +81,7 @@ Focus: **Apple vs third-party** resource breakdown, a **stable menu-bar panel**,
 - Adapts its layout: vertical header and stacked history charts on the right, single row at the bottom
 
 ### View state memory
-- Remembers category, scope, view mode, sorting, and the top-consumers tab  
+- Remembers category, **custom group**, scope, view mode, sorting, and the top-consumers tab  
 - Can be disabled in **Settings → General → View state** (“Remember view state”)
 
 ### Three-track refresh (low overhead)

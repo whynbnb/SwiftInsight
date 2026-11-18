@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var monitor: ProcessMonitor
     @EnvironmentObject private var prefs: AppPreferences
+    @EnvironmentObject private var groupStore: ProcessGroupStore
     @State private var selectedPID: Int32?
     @State private var showTerminateConfirm = false
     @State private var terminateForce = false
@@ -11,16 +12,28 @@ struct ContentView: View {
         NavigationSplitView {
             SidebarView(
                 categoryFilter: monitor.categoryFilter,
+                groupFilterID: monitor.groupFilterID,
+                groups: groupStore.groups,
+                groupCounts: monitor.groupCounts,
                 summary: monitor.summary,
                 physicalMemory: monitor.systemMetrics.physicalMemory,
                 rankings: monitor.rankings,
                 rankingTab: prefs.rankingTab,
-                onCategory: { monitor.categoryFilter = $0 },
+                onCategory: { category in
+                    monitor.selectCategory(category)
+                    if category == nil { monitor.selectGroup(nil) }
+                },
                 onRankingTab: { prefs.rankingTab = $0 },
                 onSelectRank: { pid in
                     selectedPID = pid
                     monitor.inspectedPID = pid
-                }
+                },
+                onGroupSelect: { monitor.selectGroup($0) },
+                onGroupCreate: { group in
+                    groupStore.add(group)
+                },
+                onGroupUpdate: { groupStore.update($0) },
+                onGroupDelete: { groupStore.remove(id: $0.id) }
             )
             .equatable()
             .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 360)
@@ -157,6 +170,9 @@ struct ContentView: View {
 
 struct SidebarView: View, Equatable {
     let categoryFilter: ProcessCategory?
+    let groupFilterID: UUID?
+    let groups: [ProcessFilterGroup]
+    let groupCounts: [UUID: Int]
     let summary: ResourceSummary
     let physicalMemory: UInt64
     let rankings: CategoryRankings
@@ -164,10 +180,17 @@ struct SidebarView: View, Equatable {
     var onCategory: (ProcessCategory?) -> Void
     var onRankingTab: (RankingTab) -> Void
     var onSelectRank: (Int32) -> Void
+    var onGroupSelect: (UUID?) -> Void
+    var onGroupCreate: (ProcessFilterGroup) -> UUID
+    var onGroupUpdate: (ProcessFilterGroup) -> Void
+    var onGroupDelete: (ProcessFilterGroup) -> Void
 
     /// 只比较展示数据，忽略闭包；无关状态变化时跳过重建，避免侧栏闪烁
     nonisolated static func == (lhs: SidebarView, rhs: SidebarView) -> Bool {
         lhs.categoryFilter == rhs.categoryFilter
+            && lhs.groupFilterID == rhs.groupFilterID
+            && lhs.groups == rhs.groups
+            && lhs.groupCounts == rhs.groupCounts
             && lhs.summary == rhs.summary
             && lhs.physicalMemory == rhs.physicalMemory
             && lhs.rankings == rhs.rankings
@@ -176,9 +199,18 @@ struct SidebarView: View, Equatable {
 
     var body: some View {
         VStack(spacing: 0) {
-            // 固定区域：分类 / 资源对比，永远不滚动
+            // 固定区域：分类 / 自定义分组 / 资源对比
             VStack(alignment: .leading, spacing: 14) {
                 categorySection
+                CustomGroupsSection(
+                    groups: groups,
+                    counts: groupCounts,
+                    selectedID: groupFilterID,
+                    onSelect: onGroupSelect,
+                    onCreate: onGroupCreate,
+                    onUpdate: onGroupUpdate,
+                    onDelete: onGroupDelete
+                )
                 resourceSection
             }
             .padding(.horizontal, 14)
@@ -230,7 +262,7 @@ struct SidebarView: View, Equatable {
     }
 
     private func categoryRow(_ item: CategoryFilterItem) -> some View {
-        let selected = CategoryFilterItem.from(category: categoryFilter) == item
+        let selected = groupFilterID == nil && CategoryFilterItem.from(category: categoryFilter) == item
         return Button {
             onCategory(item.category)
         } label: {

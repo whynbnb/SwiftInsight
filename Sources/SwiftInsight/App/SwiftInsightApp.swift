@@ -102,6 +102,7 @@ private struct SettingsRootView: View {
             .environmentObject(session.monitor)
             .environmentObject(session.menuBar)
             .environmentObject(session.prefs)
+            .environmentObject(session.groupStore)
             .onAppear {
                 session.bootstrapIfNeeded()
                 NSApp.setActivationPolicy(.regular)

@@ -124,6 +124,7 @@ enum MainWindowCoordinator {
                 .environmentObject(session.monitor)
                 .environmentObject(session.menuBar)
                 .environmentObject(session.prefs)
+                .environmentObject(session.groupStore)
                 .frame(minWidth: 1180, minHeight: 680)
                 .id(session.prefs.language)
         )
