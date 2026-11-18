@@ -46,11 +46,13 @@ struct CustomGroupsSection: View {
             } else if groups.count <= 4 {
                 groupRows
             } else {
-                // 分组较多时内部滚动，避免把下方资源对比挤出窗口
+                // 分组较多时内部滚动，避免把下方资源对比挤出窗口。
+                // 必须给 ScrollView 明确高度：它在 VStack 中没有固有高度，
+                // 只设 maxHeight 会被挤压成 0，导致分组看起来全部消失。
                 ScrollView(.vertical, showsIndicators: true) {
                     groupRows
                 }
-                .frame(maxHeight: 150)
+                .frame(height: 160)
             }
         }
         .sheet(item: $editorContext) { context in
