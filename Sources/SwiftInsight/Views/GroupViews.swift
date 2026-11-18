@@ -174,6 +174,21 @@ enum GroupEditorContext: Identifiable {
     }
 }
 
+/// 分组编辑器内嵌 sheet 的路由（同一视图只挂一个 sheet，避免多 sheet 冲突）
+private enum GroupEditorSheetRoute: Identifiable {
+    case ruleLibrary
+    case saveRule(GroupRule)
+    case saveRuleSet(name: String, members: [GroupMember])
+
+    var id: String {
+        switch self {
+        case .ruleLibrary: return "rule-library"
+        case .saveRule(let rule): return "save-rule-\(rule.id.uuidString)"
+        case .saveRuleSet: return "save-rule-set"
+        }
+    }
+}
+
 struct GroupEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -236,8 +251,7 @@ struct GroupEditorView: View {
     @EnvironmentObject private var groupStore: ProcessGroupStore
 
     @State private var showAppPicker = false
-    @State private var showRuleLibrary = false
-    @State private var ruleToSave: GroupRule?
+    @State private var sheetRoute: GroupEditorSheetRoute?
     @FocusState private var nameFocused: Bool
 
     var body: some View {
@@ -272,11 +286,20 @@ struct GroupEditorView: View {
             }
         }
         .onAppear { nameFocused = true }
-        .sheet(isPresented: $showRuleLibrary) {
-            RuleLibrarySheet()
-        }
-        .sheet(item: $ruleToSave) { rule in
-            SavedRuleEditorSheet(savedRule: nil, prefill: rule)
+        .sheet(item: $sheetRoute) { route in
+            switch route {
+            case .ruleLibrary:
+                RuleLibrarySheet()
+            case .saveRule(let rule):
+                SavedRuleEditorSheet(savedRule: nil, prefill: rule)
+            case .saveRuleSet(let name, let members):
+                SavedRuleEditorSheet(
+                    savedRule: nil,
+                    prefill: nil,
+                    appSetName: name,
+                    appSetMembers: members
+                )
+            }
         }
     }
 
@@ -332,8 +355,8 @@ struct GroupEditorView: View {
                     isRoot: true,
                     onRemove: nil,
                     savedRules: groupStore.savedRules,
-                    onOpenLibrary: { showRuleLibrary = true },
-                    onSaveRule: { ruleToSave = $0 }
+                    onOpenLibrary: { sheetRoute = .ruleLibrary },
+                    onSaveRule: { sheetRoute = .saveRule($0) }
                 )
                 .padding(.vertical, 2)
             }
@@ -355,9 +378,21 @@ struct GroupEditorView: View {
 
     private var staticEditor: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
+            HStack(spacing: 8) {
                 Text(L("group.members")).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 Spacer()
+                Button {
+                    sheetRoute = .saveRuleSet(name: draft.name, members: draft.members)
+                } label: {
+                    Label(L("group.rule.library.save_set"), systemImage: "bookmark")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
+                .disabled(draft.members.isEmpty)
+                .help(draft.members.isEmpty
+                      ? L("group.rule.library.save_set.empty")
+                      : L("group.rule.library.set.help"))
+
                 Button {
                     showAppPicker = true
                 } label: {
@@ -557,7 +592,9 @@ private struct GroupConditionEditor: View {
             .frame(width: 210)
 
             if let saved = currentSavedRule {
-                Text("\(saved.kind.title) · \(saved.value)")
+                Text(saved.isAppSet
+                     ? String(format: L("group.rule.library.set.summary"), saved.members.count)
+                     : "\(saved.kind.title) · \(saved.value)")
                     .font(.caption2.monospaced())
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
@@ -807,12 +844,14 @@ struct RuleLibrarySheet: View {
 
     private func savedRuleRow(_ saved: SavedGroupRule) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: "bookmark.fill")
+            Image(systemName: saved.isAppSet ? "square.stack.3d.up.fill" : "bookmark.fill")
                 .foregroundStyle(Color.accentColor)
             VStack(alignment: .leading, spacing: 2) {
                 Text(saved.name)
                     .lineLimit(1)
-                Text("\(saved.kind.title) · \(saved.value)")
+                Text(saved.isAppSet
+                     ? String(format: L("group.rule.library.set.summary"), saved.members.count)
+                     : "\(saved.kind.title) · \(saved.value)")
                     .font(.caption2.monospaced())
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
@@ -857,22 +896,31 @@ enum SavedRuleEditorContext: Identifiable {
     }
 }
 
-/// 新建 / 编辑规则库条目；可从现有规则预填
+/// 新建 / 编辑规则库条目；可从现有规则预填，或把静态分组保存为应用集合
 struct SavedRuleEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var groupStore: ProcessGroupStore
 
     let savedRule: SavedGroupRule?
-    let prefill: GroupRule?
 
     @State private var draft: SavedGroupRule
     @FocusState private var nameFocused: Bool
 
-    init(savedRule: SavedGroupRule?, prefill: GroupRule?) {
+    init(
+        savedRule: SavedGroupRule?,
+        prefill: GroupRule?,
+        appSetName: String = "",
+        appSetMembers: [GroupMember] = []
+    ) {
         self.savedRule = savedRule
-        self.prefill = prefill
         if let savedRule {
             _draft = State(initialValue: savedRule)
+        } else if !appSetMembers.isEmpty {
+            _draft = State(initialValue: SavedGroupRule(
+                name: appSetName,
+                content: .appSet,
+                members: appSetMembers
+            ))
         } else {
             _draft = State(initialValue: SavedGroupRule(
                 name: "",
@@ -885,12 +933,18 @@ struct SavedRuleEditorSheet: View {
     private var isEditing: Bool { savedRule != nil }
 
     private var canSave: Bool {
-        !draft.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if draft.isAppSet { return !draft.members.isEmpty }
+        return !draft.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var title: String {
+        if isEditing { return L("group.rule.library.edit") }
+        return draft.isAppSet ? L("group.rule.library.save_set") : L("group.rule.library.new")
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            Text(isEditing ? L("group.rule.library.edit") : L("group.rule.library.new"))
+            Text(title)
                 .font(.headline)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(14)
@@ -907,29 +961,13 @@ struct SavedRuleEditorSheet: View {
                         .focused($nameFocused)
                 }
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(L("group.rule.kind"))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Picker("", selection: $draft.kind) {
-                        ForEach(GroupRuleKind.allCases) { kind in
-                            Text(kind.title).tag(kind)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
+                if draft.isAppSet {
+                    appSetEditor
+                } else {
+                    ruleEditor
                 }
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(L("group.rule.value"))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    TextField(draft.kind.placeholder, text: $draft.value)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.body.monospaced())
-                }
-
-                Text(L("group.rule.library.help"))
+                Text(draft.isAppSet ? L("group.rule.library.set.help") : L("group.rule.library.help"))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -954,8 +992,90 @@ struct SavedRuleEditorSheet: View {
             }
             .padding(12)
         }
-        .frame(width: 460, height: 330)
+        .frame(width: 480, height: draft.isAppSet ? 430 : 360)
         .onAppear { nameFocused = true }
+    }
+
+    private var ruleEditor: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L("group.rule.kind"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Picker("", selection: $draft.kind) {
+                    ForEach(GroupRuleKind.allCases) { kind in
+                        Text(kind.title).tag(kind)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L("group.rule.value"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                TextField(draft.kind.placeholder, text: $draft.value)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.body.monospaced())
+            }
+        }
+    }
+
+    private var appSetEditor: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(L("group.rule.library.set.members"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(String(format: L("group.rule.library.set.summary"), draft.members.count))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            ScrollView {
+                VStack(spacing: 4) {
+                    ForEach(draft.members) { member in
+                        appSetMemberRow(member)
+                    }
+                }
+            }
+            .frame(maxHeight: 170)
+        }
+    }
+
+    private func appSetMemberRow(_ member: GroupMember) -> some View {
+        HStack(spacing: 6) {
+            Image(nsImage: ProcessClassifier.icon(for: member.path, name: member.name))
+                .resizable()
+                .frame(width: 15, height: 15)
+            Text(member.name)
+                .font(.caption)
+                .lineLimit(1)
+            if let bid = member.bundleID {
+                Text(bid)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer()
+            Button {
+                draft.members.removeAll { $0.id == member.id }
+            } label: {
+                Image(systemName: "minus.circle")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help(L("group.remove"))
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
     }
 
     private func save() {

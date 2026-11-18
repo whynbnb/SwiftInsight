@@ -28,7 +28,13 @@ enum ProcessGroupMatcher {
     ) -> Bool {
         if let ref = node.ruleRef {
             guard let saved = savedRules[ref] else { return false }
-            let matched = ruleMatches(process, rule: saved.rule)
+            let matched: Bool
+            if saved.isAppSet {
+                let keys = identityKeys(for: process)
+                matched = saved.members.contains { keys.contains($0.id) }
+            } else {
+                matched = ruleMatches(process, rule: saved.rule)
+            }
             return node.isNegated ? !matched : matched
         }
         if let rule = node.rule {
@@ -54,6 +60,7 @@ enum ProcessGroupMatcher {
     ) -> Bool {
         if let ref = node.ruleRef {
             guard let saved = savedRules[ref] else { return true }
+            if saved.isAppSet { return saved.members.isEmpty }
             return saved.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
         if let rule = node.rule {

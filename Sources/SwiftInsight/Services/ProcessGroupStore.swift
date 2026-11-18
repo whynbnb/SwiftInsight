@@ -108,9 +108,7 @@ final class ProcessGroupStore: ObservableObject {
 
     @discardableResult
     func addSavedRule(_ rule: SavedGroupRule) -> UUID {
-        var copy = rule
-        copy.name = normalizedRuleName(copy.name, value: copy.value)
-        copy.value = copy.value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let copy = normalizedSavedRule(rule)
         savedRules.append(copy)
         persistSavedRules()
         return copy.id
@@ -118,10 +116,7 @@ final class ProcessGroupStore: ObservableObject {
 
     func updateSavedRule(_ rule: SavedGroupRule) {
         guard let index = savedRules.firstIndex(where: { $0.id == rule.id }) else { return }
-        var copy = rule
-        copy.name = normalizedRuleName(copy.name, value: copy.value)
-        copy.value = copy.value.trimmingCharacters(in: .whitespacesAndNewlines)
-        savedRules[index] = copy
+        savedRules[index] = normalizedSavedRule(rule)
         persistSavedRules()
     }
 
@@ -137,11 +132,21 @@ final class ProcessGroupStore: ObservableObject {
         return trimmed.isEmpty ? L("group.untitled") : trimmed
     }
 
-    private func normalizedRuleName(_ name: String, value: String) -> String {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty { return trimmed }
-        let fallback = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return fallback.isEmpty ? L("group.rule.untitled") : fallback
+    private func normalizedSavedRule(_ rule: SavedGroupRule) -> SavedGroupRule {
+        var copy = rule
+        let trimmedName = copy.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if copy.isAppSet {
+            copy.value = ""
+            copy.name = trimmedName.isEmpty ? L("group.rule.untitled_set") : trimmedName
+        } else {
+            copy.value = copy.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmedName.isEmpty {
+                copy.name = copy.value.isEmpty ? L("group.rule.untitled") : copy.value
+            } else {
+                copy.name = trimmedName
+            }
+        }
+        return copy
     }
 
     private func load() {

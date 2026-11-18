@@ -42,15 +42,61 @@ struct GroupRule: Identifiable, Codable, Hashable {
     var value: String = ""
 }
 
-/// 规则库里的命名规则，可被任意分组的条件树引用；修改后所有引用同步生效
+/// 规则库条目的内容类型
+enum SavedRuleContent: String, Codable {
+    case rule    // 单条匹配规则
+    case appSet  // 固定应用集合（来自静态分组）
+}
+
+/// 规则库里的命名规则 / 规则集，可被任意分组的条件树引用；修改后所有引用同步生效
 struct SavedGroupRule: Identifiable, Codable, Hashable {
     var id = UUID()
     var name: String = ""
+    var content: SavedRuleContent = .rule
     var kind: GroupRuleKind = .bundlePattern
     var value: String = ""
+    /// 应用集合的固定成员（content == .appSet 时使用）
+    var members: [GroupMember] = []
 
     var rule: GroupRule {
         GroupRule(kind: kind, value: value)
+    }
+
+    var isAppSet: Bool { content == .appSet }
+
+    init(
+        id: UUID = UUID(),
+        name: String = "",
+        content: SavedRuleContent = .rule,
+        kind: GroupRuleKind = .bundlePattern,
+        value: String = "",
+        members: [GroupMember] = []
+    ) {
+        self.id = id
+        self.name = name
+        self.content = content
+        self.kind = kind
+        self.value = value
+        self.members = members
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case content
+        case kind
+        case value
+        case members
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+        content = try container.decodeIfPresent(SavedRuleContent.self, forKey: .content) ?? .rule
+        kind = try container.decodeIfPresent(GroupRuleKind.self, forKey: .kind) ?? .bundlePattern
+        value = try container.decodeIfPresent(String.self, forKey: .value) ?? ""
+        members = try container.decodeIfPresent([GroupMember].self, forKey: .members) ?? []
     }
 }
 
