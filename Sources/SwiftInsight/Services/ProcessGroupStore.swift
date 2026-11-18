@@ -56,12 +56,25 @@ final class ProcessGroupStore: ObservableObject {
         var group = groups[index]
         if group.isDynamic {
             let rule = ProcessGroupMatcher.rule(for: process)
-            let exists = group.rules.contains {
+            if group.condition.isRule {
+                group.condition = GroupConditionNode(children: [group.condition])
+            }
+            let exists = group.condition.leafRules.contains {
                 $0.kind == rule.kind
                     && $0.value.caseInsensitiveCompare(rule.value) == .orderedSame
             }
             guard !exists else { return }
-            group.rules.append(rule)
+            if group.condition.combinator == .all || group.condition.isNegated {
+                // 「全部」/ 取反的组再追加同级规则会收紧条件，导致刚加入的进程反而不匹配；
+                // 改为「原有条件 或 新规则」，保证该进程一定在组内。
+                let previous = group.condition
+                group.condition = GroupConditionNode(
+                    combinator: .any,
+                    children: [previous, GroupConditionNode(rule: rule)]
+                )
+            } else {
+                group.condition.children.append(GroupConditionNode(rule: rule))
+            }
         } else {
             let member = ProcessGroupMatcher.member(for: process)
             guard !group.members.contains(where: { $0.id == member.id }) else { return }

@@ -30,12 +30,14 @@ struct ProcessTableView: View {
                 },
                 onCreateGroupWithProcess: { pid in
                     guard let process = monitor.processes.first(where: { $0.pid == pid }) else { return }
-                    var group = ProcessFilterGroup(
+                    let group = ProcessFilterGroup(
                         name: ProcessAggregator.familyName(process.name),
                         symbolName: ProcessFilterGroup.symbolChoices[0],
-                        isDynamic: true
+                        isDynamic: true,
+                        condition: GroupConditionNode(
+                            children: [GroupConditionNode(rule: ProcessGroupMatcher.rule(for: process))]
+                        )
                     )
-                    group.rules = [ProcessGroupMatcher.rule(for: process)]
                     let id = groupStore.add(group)
                     monitor.selectGroup(id)
                 },

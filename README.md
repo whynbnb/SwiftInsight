@@ -27,7 +27,7 @@ Focus: **Apple vs third-party** resource breakdown, a **stable menu-bar panel**,
 |------|----------------|
 | **Processes** | Live CPU / memory / threads / user / PID / path / Bundle ID · click headers to sort |
 | **Classification** | Apple System · Apple Apps · Third-Party |
-| **Filters** | Category · **custom groups** (dynamic rules / static apps) · scope · search |
+| **Filters** | Category · **custom groups** (dynamic condition tree / static apps) · scope · search |
 | **Views** | Flat list · grouped tree · **by-app** · parent/child tree |
 | **System strip** | CPU (cores, E/P), memory (app/wired/compressed), pressure, swap, net, disk, load |
 | **Top consumers** | Compact tabs: third-party CPU / memory, Apple system, Apple apps |
@@ -50,7 +50,8 @@ Focus: **Apple vs third-party** resource breakdown, a **stable menu-bar panel**,
 
 ### Custom groups
 - Create your own groups in the sidebar (＋), then click one to filter the whole process list
-- **Dynamic** groups match by rules: **Bundle ID wildcard** · **name wildcard** (`*` any characters, `?` one character) · Bundle ID prefix · name contains · path contains · user
+- **Dynamic** groups match a condition tree with **AND / OR / NOT** and **nested** groups — e.g. “browsers except this build” or “everything outside /System”
+- Each rule can use **Bundle ID wildcard** · **name wildcard** (`*` any characters, `?` one character) · Bundle ID prefix · name contains · path contains · user
 - **Static** groups hold a fixed app list you curate
 - Add apps from the global view: right-click a row → **Add to Group**, or **New Group with This Process** to create a group from that app
 - The group editor searches all running apps, so membership can be changed at any time

@@ -42,6 +42,65 @@ struct GroupRule: Identifiable, Codable, Hashable {
     var value: String = ""
 }
 
+/// 条件组合方式：任一（或）/ 全部（且）
+enum GroupCombinator: String, Codable, CaseIterable, Identifiable {
+    case any
+    case all
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .any: return L("group.logic.any")
+        case .all: return L("group.logic.all")
+        }
+    }
+}
+
+/// 分组条件树的节点：规则叶子，或可嵌套、可取反的条件组
+struct GroupConditionNode: Identifiable, Codable, Hashable {
+    var id = UUID()
+    /// 有值时为规则叶子；nil 时表示条件组
+    var rule: GroupRule?
+    /// 条件组内子条件的组合方式
+    var combinator: GroupCombinator = .any
+    /// 是否对自身结果取反
+    var isNegated: Bool = false
+    /// 子条件（仅条件组使用）
+    var children: [GroupConditionNode] = []
+
+    var isRule: Bool { rule != nil }
+
+    init(id: UUID = UUID(), rule: GroupRule) {
+        self.id = id
+        self.rule = rule
+    }
+
+    init(
+        id: UUID = UUID(),
+        combinator: GroupCombinator = .any,
+        isNegated: Bool = false,
+        children: [GroupConditionNode] = []
+    ) {
+        self.id = id
+        self.rule = nil
+        self.combinator = combinator
+        self.isNegated = isNegated
+        self.children = children
+    }
+
+    /// 树中所有规则叶子（用于去重等）
+    var leafRules: [GroupRule] {
+        if let rule { return [rule] }
+        return children.flatMap(\.leafRules)
+    }
+
+    /// 旧版扁平规则 → 条件树
+    static func legacy(rules: [GroupRule]) -> GroupConditionNode {
+        GroupConditionNode(children: rules.map { GroupConditionNode(rule: $0) })
+    }
+}
+
 /// 静态分组里的一个应用成员
 struct GroupMember: Identifiable, Codable, Hashable {
     /// 稳定键：app:/bid:/path:/name:
@@ -51,15 +110,18 @@ struct GroupMember: Identifiable, Codable, Hashable {
     var path: String
 }
 
-/// 用户自定义的进程分组（动态规则或静态成员）
+/// 用户自定义的进程分组（动态条件树或静态成员）
 struct ProcessFilterGroup: Identifiable, Codable, Hashable {
     var id = UUID()
     var name: String
     var symbolName: String
-    /// true = 动态规则；false = 静态成员
+    /// true = 动态条件树；false = 静态成员
     var isDynamic: Bool
+    /// 旧版扁平规则，仅用于兼容已保存的数据
     var rules: [GroupRule] = []
     var members: [GroupMember] = []
+    /// 动态分组的条件树（根节点为条件组）
+    var condition: GroupConditionNode = GroupConditionNode()
 
     static let symbolChoices = [
         "app.badge",
@@ -71,6 +133,49 @@ struct ProcessFilterGroup: Identifiable, Codable, Hashable {
         "shippingbox",
         "star",
     ]
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        symbolName: String,
+        isDynamic: Bool,
+        rules: [GroupRule] = [],
+        members: [GroupMember] = [],
+        condition: GroupConditionNode? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.symbolName = symbolName
+        self.isDynamic = isDynamic
+        self.rules = rules
+        self.members = members
+        self.condition = condition ?? .legacy(rules: rules)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case symbolName
+        case isDynamic
+        case rules
+        case members
+        case condition
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        symbolName = try container.decode(String.self, forKey: .symbolName)
+        isDynamic = try container.decode(Bool.self, forKey: .isDynamic)
+        rules = try container.decodeIfPresent([GroupRule].self, forKey: .rules) ?? []
+        members = try container.decodeIfPresent([GroupMember].self, forKey: .members) ?? []
+        if let saved = try container.decodeIfPresent(GroupConditionNode.self, forKey: .condition) {
+            condition = saved
+        } else {
+            condition = .legacy(rules: rules)
+        }
+    }
 }
 
 /// 分组编辑器中的全局应用候选条目

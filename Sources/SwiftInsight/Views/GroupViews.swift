@@ -191,6 +191,11 @@ struct GroupEditorSheet: View {
                 isDynamic: true
             ))
         case .edit(let group):
+            var group = group
+            // 根节点必须是条件组，旧数据或异常数据统一包一层
+            if group.condition.isRule {
+                group.condition = GroupConditionNode(children: [group.condition])
+            }
             _draft = State(initialValue: group)
         }
     }
@@ -219,7 +224,7 @@ struct GroupEditorSheet: View {
             }
             .padding(12)
         }
-        .frame(width: 580, height: 440)
+        .frame(width: 640, height: 560)
     }
 }
 
@@ -290,67 +295,46 @@ struct GroupEditorView: View {
         .padding(.top, 2)
     }
 
-    // MARK: Dynamic rules
+    // MARK: Dynamic condition tree
 
     private var dynamicEditor: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(L("group.rules")).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Text(L("group.logic"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
                 Spacer()
-                Button {
-                    draft.rules.append(GroupRule())
-                } label: {
-                    Label(L("group.rule.add"), systemImage: "plus")
-                        .font(.caption)
-                }
-                .buttonStyle(.borderless)
-            }
-
-            if draft.rules.isEmpty {
-                Text(L("group.rule.empty"))
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            } else {
-                ScrollView {
-                    VStack(spacing: 6) {
-                        ForEach(Array(draft.rules.enumerated()), id: \.element.id) { index, rule in
-                            ruleRow(index: index, rule: rule)
-                        }
+                Picker("", selection: $draft.condition.combinator) {
+                    ForEach(GroupCombinator.allCases) { combinator in
+                        Text(combinator.title).tag(combinator)
                     }
                 }
-                .frame(maxHeight: 200)
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: 196)
+                .help(L("group.logic.hint"))
             }
+
+            ScrollView {
+                GroupConditionEditor(
+                    node: $draft.condition,
+                    depth: 0,
+                    isRoot: true,
+                    onRemove: nil
+                )
+                .padding(.vertical, 2)
+            }
+            .frame(maxHeight: 300)
+
+            Text(L("group.logic.hint"))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             Text(L("group.rule.wildcard.hint"))
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private func ruleRow(index: Int, rule: GroupRule) -> some View {
-        HStack(spacing: 8) {
-            Picker("", selection: $draft.rules[index].kind) {
-                ForEach(GroupRuleKind.allCases) { kind in
-                    Text(kind.title).tag(kind)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .frame(width: 150)
-
-            TextField(rule.kind.placeholder, text: $draft.rules[index].value)
-                .textFieldStyle(.roundedBorder)
-                .font(.caption.monospaced())
-
-            Button {
-                draft.rules.remove(at: index)
-            } label: {
-                Image(systemName: "minus.circle")
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help(L("group.remove"))
         }
     }
 
@@ -426,6 +410,166 @@ struct GroupEditorView: View {
             RoundedRectangle(cornerRadius: 5, style: .continuous)
                 .fill(Color.primary.opacity(0.04))
         )
+    }
+}
+
+// MARK: - 条件树编辑器（递归）
+
+/// 一行规则，或一个可嵌套 / 可取反的条件组。
+private struct GroupConditionEditor: View {
+    @Binding var node: GroupConditionNode
+    let depth: Int
+    let isRoot: Bool
+    let onRemove: (() -> Void)?
+
+    private static let maxDepth = 4
+
+    var body: some View {
+        if node.isRule {
+            ruleRow
+        } else {
+            groupBox
+        }
+    }
+
+    // MARK: Rule leaf
+
+    private var ruleKind: Binding<GroupRuleKind> {
+        Binding(
+            get: { node.rule?.kind ?? .bundlePattern },
+            set: { node.rule?.kind = $0 }
+        )
+    }
+
+    private var ruleValue: Binding<String> {
+        Binding(
+            get: { node.rule?.value ?? "" },
+            set: { node.rule?.value = $0 }
+        )
+    }
+
+    private var ruleRow: some View {
+        HStack(spacing: 6) {
+            negateButton
+
+            Picker("", selection: ruleKind) {
+                ForEach(GroupRuleKind.allCases) { kind in
+                    Text(kind.title).tag(kind)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(width: 142)
+
+            TextField(node.rule?.kind.placeholder ?? "", text: ruleValue)
+                .textFieldStyle(.roundedBorder)
+                .font(.caption.monospaced())
+
+            if !isRoot, let onRemove {
+                removeButton(help: L("group.remove"), action: onRemove)
+            }
+        }
+    }
+
+    // MARK: Nested condition group
+
+    private var groupBox: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if !isRoot {
+                HStack(spacing: 6) {
+                    negateButton
+
+                    Picker("", selection: $node.combinator) {
+                        ForEach(GroupCombinator.allCases) { combinator in
+                            Text(combinator.title).tag(combinator)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 168)
+
+                    Spacer()
+
+                    if let onRemove {
+                        removeButton(help: L("group.condition.remove"), action: onRemove)
+                    }
+                }
+            }
+
+            if node.children.isEmpty {
+                Text(L("group.condition.empty"))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .padding(.leading, isRoot ? 0 : 2)
+            } else {
+                ForEach(Array(node.children.enumerated()), id: \.element.id) { index, child in
+                    GroupConditionEditor(
+                        node: $node.children[index],
+                        depth: depth + 1,
+                        isRoot: false,
+                        onRemove: { node.children.removeAll { $0.id == child.id } }
+                    )
+                }
+            }
+
+            HStack(spacing: 10) {
+                Button {
+                    node.children.append(GroupConditionNode(rule: GroupRule()))
+                } label: {
+                    Label(L("group.rule.add"), systemImage: "plus")
+                }
+
+                if depth < Self.maxDepth {
+                    Button {
+                        node.children.append(GroupConditionNode())
+                    } label: {
+                        Label(L("group.condition.add_group"), systemImage: "square.stack.3d.down.right")
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
+            .font(.caption)
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+        }
+        .padding(isRoot ? 0 : 8)
+        .background {
+            if !isRoot {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color.primary.opacity(0.045))
+            }
+        }
+    }
+
+    // MARK: Shared
+
+    private var negateButton: some View {
+        Button {
+            node.isNegated.toggle()
+        } label: {
+            Text(L("group.logic.not.short"))
+                .font(.system(size: 9, weight: .bold))
+                .frame(width: 26, height: 17)
+                .background(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(node.isNegated ? Color.red.opacity(0.18) : Color.secondary.opacity(0.10))
+                )
+                .foregroundStyle(node.isNegated ? Color.red : Color.secondary)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(L("group.logic.not.help"))
+    }
+
+    private func removeButton(help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "minus.circle")
+                .foregroundStyle(.secondary)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
     }
 }
 

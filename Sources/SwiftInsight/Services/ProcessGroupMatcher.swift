@@ -1,21 +1,44 @@
 import Foundation
 
-/// 自定义分组匹配：动态规则（Bundle / 名称 / 路径 / 用户）或静态应用成员
+/// 自定义分组匹配：动态条件树（或/且/非、嵌套）或静态应用成员
 enum ProcessGroupMatcher {
 
     // MARK: - Match
 
     static func matches(_ process: MonitoredProcess, group: ProcessFilterGroup) -> Bool {
         if group.isDynamic {
-            let rules = group.rules.filter {
-                !$0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            }
-            guard !rules.isEmpty else { return false }
-            return rules.contains { ruleMatches(process, rule: $0) }
+            return evaluate(group.condition, process: process)
         }
         guard !group.members.isEmpty else { return false }
         let keys = identityKeys(for: process)
         return group.members.contains { keys.contains($0.id) }
+    }
+
+    /// 递归求值：规则叶子按取反处理，条件组按 或/且 组合后再取反。
+    /// 空白规则（未填写值）视为无效条件；整个条件树没有有效条件时不匹配任何进程。
+    static func evaluate(_ node: GroupConditionNode, process: MonitoredProcess) -> Bool {
+        if let rule = node.rule {
+            let matched = ruleMatches(process, rule: rule)
+            return node.isNegated ? !matched : matched
+        }
+        let children = node.children.filter { !isVacuous($0) }
+        guard !children.isEmpty else { return false }
+        let combined: Bool
+        switch node.combinator {
+        case .any:
+            combined = children.contains { evaluate($0, process: process) }
+        case .all:
+            combined = children.allSatisfy { evaluate($0, process: process) }
+        }
+        return node.isNegated ? !combined : combined
+    }
+
+    /// 没有任何有效规则的条件（空白规则 / 空条件组）
+    private static func isVacuous(_ node: GroupConditionNode) -> Bool {
+        if let rule = node.rule {
+            return rule.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        return node.children.allSatisfy(isVacuous)
     }
 
     private static func ruleMatches(_ process: MonitoredProcess, rule: GroupRule) -> Bool {
