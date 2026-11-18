@@ -320,6 +320,11 @@ struct GroupEditorView: View {
                 }
                 .frame(maxHeight: 200)
             }
+
+            Text(L("group.rule.wildcard.hint"))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

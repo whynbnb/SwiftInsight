@@ -22,6 +22,19 @@ enum ProcessGroupMatcher {
         let value = rule.value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !value.isEmpty else { return false }
         switch rule.kind {
+        case .bundlePattern:
+            var ids: [String] = []
+            if let bid = process.bundleIdentifier, !bid.isEmpty {
+                ids.append(bid.lowercased())
+                ids.append(ProcessAggregator.familyBundleID(bid).lowercased())
+            }
+            return ids.contains { wildcardMatch(pattern: value, text: $0) }
+        case .namePattern:
+            let names = [
+                process.name.lowercased(),
+                ProcessAggregator.familyName(process.name).lowercased(),
+            ]
+            return names.contains { wildcardMatch(pattern: value, text: $0) }
         case .bundlePrefix:
             let ids = [
                 process.bundleIdentifier,
@@ -39,6 +52,40 @@ enum ProcessGroupMatcher {
         case .user:
             return process.username.lowercased() == value
         }
+    }
+
+    // MARK: - Wildcard
+
+    /// 通配符匹配：`*` 任意多个字符，`?` 单个字符。
+    /// 不含通配符时按完整名称匹配（忽略大小写）。
+    static func wildcardMatch(pattern: String, text: String) -> Bool {
+        let p = Array(pattern.lowercased())
+        let s = Array(text.lowercased())
+        if p.isEmpty { return s.isEmpty }
+
+        var pi = 0
+        var si = 0
+        var star = -1
+        var resume = 0
+
+        while si < s.count {
+            if pi < p.count, p[pi] == "?" || p[pi] == s[si] {
+                pi += 1
+                si += 1
+            } else if pi < p.count, p[pi] == "*" {
+                star = pi
+                resume = si
+                pi += 1
+            } else if star >= 0 {
+                pi = star + 1
+                resume += 1
+                si = resume
+            } else {
+                return false
+            }
+        }
+        while pi < p.count, p[pi] == "*" { pi += 1 }
+        return pi == p.count
     }
 
     // MARK: - Identity

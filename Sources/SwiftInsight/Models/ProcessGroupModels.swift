@@ -4,6 +4,8 @@ import Foundation
 
 /// 动态分组的规则类型
 enum GroupRuleKind: String, Codable, CaseIterable, Identifiable {
+    case bundlePattern  // Bundle ID 通配符（含同族 helper）
+    case namePattern    // 名称通配符
     case bundlePrefix   // Bundle ID 前缀（含同族 helper）
     case nameContains   // 名称包含
     case pathContains   // 路径包含
@@ -13,6 +15,8 @@ enum GroupRuleKind: String, Codable, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .bundlePattern: return L("group.rule.bundle_pattern")
+        case .namePattern: return L("group.rule.name_pattern")
         case .bundlePrefix: return L("group.rule.bundle")
         case .nameContains: return L("group.rule.name")
         case .pathContains: return L("group.rule.path")
@@ -22,6 +26,8 @@ enum GroupRuleKind: String, Codable, CaseIterable, Identifiable {
 
     var placeholder: String {
         switch self {
+        case .bundlePattern: return "com.microsoft.*"
+        case .namePattern: return "*Edge*"
         case .bundlePrefix: return "com.microsoft.edgemac"
         case .nameContains: return "Chrome"
         case .pathContains: return "/Applications/"
@@ -32,7 +38,7 @@ enum GroupRuleKind: String, Codable, CaseIterable, Identifiable {
 
 struct GroupRule: Identifiable, Codable, Hashable {
     var id = UUID()
-    var kind: GroupRuleKind = .bundlePrefix
+    var kind: GroupRuleKind = .bundlePattern
     var value: String = ""
 }
 
