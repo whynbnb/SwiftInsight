@@ -52,6 +52,7 @@ Focus: **Apple vs third-party** resource breakdown, a **stable menu-bar panel**,
 - Create your own groups in the sidebar (＋), then click one to filter the whole process list
 - **Dynamic** groups match a condition tree with **AND / OR / NOT** and **nested** groups — e.g. “browsers except this build” or “everything outside /System”
 - Each rule can use **Bundle ID wildcard** · **name wildcard** (`*` any characters, `?` one character) · Bundle ID prefix · name contains · path contains · user
+- **Rule library**: save reusable named rules and insert them with **Reference Rule**; edits apply to every reference instantly
 - **Static** groups hold a fixed app list you curate
 - Add apps from the global view: right-click a row → **Add to Group**, or **New Group with This Process** to create a group from that app
 - The group editor searches all running apps, so membership can be changed at any time

@@ -1,27 +1,31 @@
 import Foundation
 import Combine
 
-/// 自定义分组的持久化存储（动态规则 / 静态应用成员）
+/// 自定义分组与规则库的持久化存储
 @MainActor
 final class ProcessGroupStore: ObservableObject {
     static let shared = ProcessGroupStore()
 
     private static let storageKey = "customProcessGroups"
+    private static let savedRulesKey = "savedGroupRules"
 
     @Published private(set) var groups: [ProcessFilterGroup] = []
+    /// 全局规则库：命名规则可被任意分组引用
+    @Published private(set) var savedRules: [SavedGroupRule] = []
 
     private init() {
         load()
+        loadSavedRules()
     }
 
-    // MARK: - Query
+    // MARK: - Group query
 
     func group(with id: UUID?) -> ProcessFilterGroup? {
         guard let id else { return nil }
         return groups.first { $0.id == id }
     }
 
-    // MARK: - Mutation
+    // MARK: - Group mutation
 
     @discardableResult
     func add(_ group: ProcessFilterGroup) -> UUID {
@@ -84,11 +88,60 @@ final class ProcessGroupStore: ObservableObject {
         persist()
     }
 
+    // MARK: - Rule library query
+
+    func savedRule(with id: UUID?) -> SavedGroupRule? {
+        guard let id else { return nil }
+        return savedRules.first { $0.id == id }
+    }
+
+    var savedRulesByID: [UUID: SavedGroupRule] {
+        Dictionary(uniqueKeysWithValues: savedRules.map { ($0.id, $0) })
+    }
+
+    /// 有多少个分组引用了这条规则
+    func referenceCount(forSavedRule id: UUID) -> Int {
+        groups.filter { $0.condition.referencedRuleIDs.contains(id) }.count
+    }
+
+    // MARK: - Rule library mutation
+
+    @discardableResult
+    func addSavedRule(_ rule: SavedGroupRule) -> UUID {
+        var copy = rule
+        copy.name = normalizedRuleName(copy.name, value: copy.value)
+        copy.value = copy.value.trimmingCharacters(in: .whitespacesAndNewlines)
+        savedRules.append(copy)
+        persistSavedRules()
+        return copy.id
+    }
+
+    func updateSavedRule(_ rule: SavedGroupRule) {
+        guard let index = savedRules.firstIndex(where: { $0.id == rule.id }) else { return }
+        var copy = rule
+        copy.name = normalizedRuleName(copy.name, value: copy.value)
+        copy.value = copy.value.trimmingCharacters(in: .whitespacesAndNewlines)
+        savedRules[index] = copy
+        persistSavedRules()
+    }
+
+    func removeSavedRule(id: UUID) {
+        savedRules.removeAll { $0.id == id }
+        persistSavedRules()
+    }
+
     // MARK: - Persistence
 
     private func normalizedName(_ name: String) -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? L("group.untitled") : trimmed
+    }
+
+    private func normalizedRuleName(_ name: String, value: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { return trimmed }
+        let fallback = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return fallback.isEmpty ? L("group.rule.untitled") : fallback
     }
 
     private func load() {
@@ -100,8 +153,22 @@ final class ProcessGroupStore: ObservableObject {
         groups = decoded
     }
 
+    private func loadSavedRules() {
+        guard let data = UserDefaults.standard.data(forKey: Self.savedRulesKey),
+              let decoded = try? JSONDecoder().decode([SavedGroupRule].self, from: data) else {
+            savedRules = []
+            return
+        }
+        savedRules = decoded
+    }
+
     private func persist() {
         guard let data = try? JSONEncoder().encode(groups) else { return }
         UserDefaults.standard.set(data, forKey: Self.storageKey)
+    }
+
+    private func persistSavedRules() {
+        guard let data = try? JSONEncoder().encode(savedRules) else { return }
+        UserDefaults.standard.set(data, forKey: Self.savedRulesKey)
     }
 }

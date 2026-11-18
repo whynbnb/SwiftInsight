@@ -118,6 +118,7 @@ final class ProcessMonitor: ObservableObject {
     private let sampleQueue = DispatchQueue(label: "com.swiftinsight.process-sample", qos: .utility)
     private let historyStore = MetricsHistoryStore()
     private var groupStoreCancellable: AnyCancellable?
+    private var savedRulesCancellable: AnyCancellable?
 
     private static let mainIntervalKey = "mainRefreshInterval"
     private static let iconIntervalKey = "menuBarIconInterval"
@@ -218,6 +219,17 @@ final class ProcessMonitor: ObservableObject {
                     self.recomputeDisplayed()
                 }
         }
+        if savedRulesCancellable == nil {
+            // 规则库内容变化 → 所有引用处实时生效
+            savedRulesCancellable = ProcessGroupStore.shared.$savedRules
+                .dropFirst()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    guard let self else { return }
+                    self.recomputeGroupCounts()
+                    self.recomputeDisplayed()
+                }
+        }
         recomputeGroupCounts()
     }
 
@@ -244,11 +256,12 @@ final class ProcessMonitor: ObservableObject {
             if !groupCounts.isEmpty { groupCounts = [:] }
             return
         }
+        let savedRules = ProcessGroupStore.shared.savedRulesByID
         var counts: [UUID: Int] = [:]
         counts.reserveCapacity(groups.count)
         for group in groups {
             var count = 0
-            for p in processes where ProcessGroupMatcher.matches(p, group: group) {
+            for p in processes where ProcessGroupMatcher.matches(p, group: group, savedRules: savedRules) {
                 count += 1
             }
             counts[group.id] = count
@@ -532,7 +545,10 @@ final class ProcessMonitor: ObservableObject {
         )
         // 自定义分组：在分类/范围/搜索之上再筛一层
         if let group = ProcessGroupStore.shared.group(with: groupFilterID) {
-            filtered = filtered.filter { ProcessGroupMatcher.matches($0, group: group) }
+            let savedRules = ProcessGroupStore.shared.savedRulesByID
+            filtered = filtered.filter {
+                ProcessGroupMatcher.matches($0, group: group, savedRules: savedRules)
+            }
         }
 
         let rows: [ProcessDisplayRow]

@@ -42,6 +42,18 @@ struct GroupRule: Identifiable, Codable, Hashable {
     var value: String = ""
 }
 
+/// 规则库里的命名规则，可被任意分组的条件树引用；修改后所有引用同步生效
+struct SavedGroupRule: Identifiable, Codable, Hashable {
+    var id = UUID()
+    var name: String = ""
+    var kind: GroupRuleKind = .bundlePattern
+    var value: String = ""
+
+    var rule: GroupRule {
+        GroupRule(kind: kind, value: value)
+    }
+}
+
 /// 条件组合方式：任一（或）/ 全部（且）
 enum GroupCombinator: String, Codable, CaseIterable, Identifiable {
     case any
@@ -60,8 +72,10 @@ enum GroupCombinator: String, Codable, CaseIterable, Identifiable {
 /// 分组条件树的节点：规则叶子，或可嵌套、可取反的条件组
 struct GroupConditionNode: Identifiable, Codable, Hashable {
     var id = UUID()
-    /// 有值时为规则叶子；nil 时表示条件组
+    /// 有值时为直接填写的规则叶子；nil 时表示条件组或规则库引用
     var rule: GroupRule?
+    /// 引用规则库中的命名规则（与 rule 互斥）
+    var ruleRef: UUID?
     /// 条件组内子条件的组合方式
     var combinator: GroupCombinator = .any
     /// 是否对自身结果取反
@@ -69,11 +83,19 @@ struct GroupConditionNode: Identifiable, Codable, Hashable {
     /// 子条件（仅条件组使用）
     var children: [GroupConditionNode] = []
 
-    var isRule: Bool { rule != nil }
+    var isRule: Bool { rule != nil || ruleRef != nil }
+    var isReference: Bool { ruleRef != nil }
 
     init(id: UUID = UUID(), rule: GroupRule) {
         self.id = id
         self.rule = rule
+        self.ruleRef = nil
+    }
+
+    init(id: UUID = UUID(), ruleRef: UUID) {
+        self.id = id
+        self.rule = nil
+        self.ruleRef = ruleRef
     }
 
     init(
@@ -84,15 +106,26 @@ struct GroupConditionNode: Identifiable, Codable, Hashable {
     ) {
         self.id = id
         self.rule = nil
+        self.ruleRef = nil
         self.combinator = combinator
         self.isNegated = isNegated
         self.children = children
     }
 
-    /// 树中所有规则叶子（用于去重等）
+    /// 树中所有直接填写的规则叶子（用于去重等，不含规则库引用）
     var leafRules: [GroupRule] {
         if let rule { return [rule] }
         return children.flatMap(\.leafRules)
+    }
+
+    /// 树中所有引用的规则库 ID
+    var referencedRuleIDs: Set<UUID> {
+        var ids: Set<UUID> = []
+        if let ruleRef { ids.insert(ruleRef) }
+        for child in children {
+            ids.formUnion(child.referencedRuleIDs)
+        }
+        return ids
     }
 
     /// 旧版扁平规则 → 条件树

@@ -233,7 +233,11 @@ struct GroupEditorSheet: View {
 struct GroupEditorView: View {
     @Binding var draft: ProcessFilterGroup
 
+    @EnvironmentObject private var groupStore: ProcessGroupStore
+
     @State private var showAppPicker = false
+    @State private var showRuleLibrary = false
+    @State private var ruleToSave: GroupRule?
     @FocusState private var nameFocused: Bool
 
     var body: some View {
@@ -268,6 +272,12 @@ struct GroupEditorView: View {
             }
         }
         .onAppear { nameFocused = true }
+        .sheet(isPresented: $showRuleLibrary) {
+            RuleLibrarySheet()
+        }
+        .sheet(item: $ruleToSave) { rule in
+            SavedRuleEditorSheet(savedRule: nil, prefill: rule)
+        }
     }
 
     // MARK: Icon
@@ -320,7 +330,10 @@ struct GroupEditorView: View {
                     node: $draft.condition,
                     depth: 0,
                     isRoot: true,
-                    onRemove: nil
+                    onRemove: nil,
+                    savedRules: groupStore.savedRules,
+                    onOpenLibrary: { showRuleLibrary = true },
+                    onSaveRule: { ruleToSave = $0 }
                 )
                 .padding(.vertical, 2)
             }
@@ -415,24 +428,29 @@ struct GroupEditorView: View {
 
 // MARK: - 条件树编辑器（递归）
 
-/// 一行规则，或一个可嵌套 / 可取反的条件组。
+/// 一行直接规则、一条规则库引用，或一个可嵌套 / 可取反的条件组。
 private struct GroupConditionEditor: View {
     @Binding var node: GroupConditionNode
     let depth: Int
     let isRoot: Bool
     let onRemove: (() -> Void)?
+    let savedRules: [SavedGroupRule]
+    let onOpenLibrary: () -> Void
+    let onSaveRule: (GroupRule) -> Void
 
     private static let maxDepth = 4
 
     var body: some View {
-        if node.isRule {
+        if node.isReference {
+            referenceRow
+        } else if node.isRule {
             ruleRow
         } else {
             groupBox
         }
     }
 
-    // MARK: Rule leaf
+    // MARK: Direct rule leaf
 
     private var ruleKind: Binding<GroupRuleKind> {
         Binding(
@@ -446,6 +464,18 @@ private struct GroupConditionEditor: View {
             get: { node.rule?.value ?? "" },
             set: { node.rule?.value = $0 }
         )
+    }
+
+    /// 与当前规则完全相同的规则库条目（用于显示「已保存」）
+    private var matchingSavedRule: SavedGroupRule? {
+        guard let rule = node.rule else { return nil }
+        let value = rule.value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return nil }
+        return savedRules.first {
+            $0.kind == rule.kind
+                && $0.value.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .caseInsensitiveCompare(value) == .orderedSame
+        }
     }
 
     private var ruleRow: some View {
@@ -464,6 +494,90 @@ private struct GroupConditionEditor: View {
             TextField(node.rule?.kind.placeholder ?? "", text: ruleValue)
                 .textFieldStyle(.roundedBorder)
                 .font(.caption.monospaced())
+
+            Button {
+                if let rule = node.rule { onSaveRule(rule) }
+            } label: {
+                Image(systemName: matchingSavedRule == nil ? "bookmark" : "bookmark.fill")
+                    .foregroundStyle(matchingSavedRule == nil ? Color.secondary : Color.accentColor)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(matchingSavedRule != nil || (node.rule?.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true))
+            .help(matchingSavedRule == nil ? L("group.rule.save_to_library") : L("group.rule.saved_to_library"))
+
+            if !isRoot, let onRemove {
+                removeButton(help: L("group.remove"), action: onRemove)
+            }
+        }
+    }
+
+    // MARK: Rule library reference
+
+    private var currentSavedRule: SavedGroupRule? {
+        guard let ref = node.ruleRef else { return nil }
+        return savedRules.first { $0.id == ref }
+    }
+
+    private var referenceRow: some View {
+        HStack(spacing: 6) {
+            negateButton
+
+            Menu {
+                if savedRules.isEmpty {
+                    Button(L("group.rule.library_empty")) {}
+                        .disabled(true)
+                } else {
+                    ForEach(savedRules) { saved in
+                        Button {
+                            node.ruleRef = saved.id
+                        } label: {
+                            if saved.id == node.ruleRef {
+                                Label(saved.name, systemImage: "checkmark")
+                            } else {
+                                Text(saved.name)
+                            }
+                        }
+                    }
+                }
+                Divider()
+                Button(L("group.rule.manage_library")) { onOpenLibrary() }
+            } label: {
+                Label(
+                    currentSavedRule?.name ?? L("group.rule.missing"),
+                    systemImage: currentSavedRule == nil ? "exclamationmark.triangle" : "bookmark.fill"
+                )
+                .font(.caption)
+                .lineLimit(1)
+                .foregroundStyle(currentSavedRule == nil ? Color.red : Color.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .frame(width: 210)
+
+            if let saved = currentSavedRule {
+                Text("\(saved.kind.title) · \(saved.value)")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } else {
+                Text(L("group.rule.missing.help"))
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 0)
+
+            Button(action: onOpenLibrary) {
+                Image(systemName: "books.vertical")
+                    .foregroundStyle(.secondary)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(L("group.rule.manage_library"))
 
             if !isRoot, let onRemove {
                 removeButton(help: L("group.remove"), action: onRemove)
@@ -507,7 +621,10 @@ private struct GroupConditionEditor: View {
                         node: $node.children[index],
                         depth: depth + 1,
                         isRoot: false,
-                        onRemove: { node.children.removeAll { $0.id == child.id } }
+                        onRemove: { node.children.removeAll { $0.id == child.id } },
+                        savedRules: savedRules,
+                        onOpenLibrary: onOpenLibrary,
+                        onSaveRule: onSaveRule
                     )
                 }
             }
@@ -518,6 +635,25 @@ private struct GroupConditionEditor: View {
                 } label: {
                     Label(L("group.rule.add"), systemImage: "plus")
                 }
+
+                Menu {
+                    if savedRules.isEmpty {
+                        Button(L("group.rule.library_empty")) {}
+                            .disabled(true)
+                    } else {
+                        ForEach(savedRules) { saved in
+                            Button(saved.name) {
+                                node.children.append(GroupConditionNode(ruleRef: saved.id))
+                            }
+                        }
+                    }
+                    Divider()
+                    Button(L("group.rule.manage_library")) { onOpenLibrary() }
+                } label: {
+                    Label(L("group.rule.reference"), systemImage: "bookmark")
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
 
                 if depth < Self.maxDepth {
                     Button {
@@ -570,6 +706,264 @@ private struct GroupConditionEditor: View {
         }
         .buttonStyle(.plain)
         .help(help)
+    }
+}
+
+// MARK: - 规则库
+
+/// 全局命名规则列表；修改后所有引用它的分组立即生效
+struct RuleLibrarySheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var groupStore: ProcessGroupStore
+
+    @State private var editing: SavedRuleEditorContext?
+    @State private var pendingDelete: SavedGroupRule?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(L("group.rule.library"))
+                    .font(.headline)
+                Spacer()
+                Button(L("group.done")) { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding(12)
+
+            Text(L("group.rule.library.help"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
+
+            Divider()
+
+            if groupStore.savedRules.isEmpty {
+                VStack(spacing: 8) {
+                    Text(L("group.rule.library.empty_hint"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    Button(L("group.rule.library.new")) {
+                        editing = .new
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(20)
+            } else {
+                List {
+                    ForEach(groupStore.savedRules) { saved in
+                        savedRuleRow(saved)
+                    }
+                }
+                .listStyle(.inset)
+            }
+
+            Divider()
+
+            HStack {
+                Button {
+                    editing = .new
+                } label: {
+                    Label(L("group.rule.library.new"), systemImage: "plus")
+                }
+                Spacer()
+                Button(L("group.done")) { dismiss() }
+            }
+            .padding(12)
+        }
+        .frame(width: 540, height: 420)
+        .sheet(item: $editing) { context in
+            switch context {
+            case .new:
+                SavedRuleEditorSheet(savedRule: nil, prefill: nil)
+            case .edit(let rule):
+                SavedRuleEditorSheet(savedRule: rule, prefill: nil)
+            }
+        }
+        .confirmationDialog(
+            L("group.rule.library.delete.confirm"),
+            isPresented: Binding(
+                get: { pendingDelete != nil },
+                set: { if !$0 { pendingDelete = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(L("group.rule.library.delete"), role: .destructive) {
+                if let rule = pendingDelete {
+                    groupStore.removeSavedRule(id: rule.id)
+                }
+                pendingDelete = nil
+            }
+            Button(L("alert.cancel"), role: .cancel) { pendingDelete = nil }
+        } message: {
+            if let rule = pendingDelete {
+                Text(deleteMessage(for: rule))
+            }
+        }
+    }
+
+    private func savedRuleRow(_ saved: SavedGroupRule) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "bookmark.fill")
+                .foregroundStyle(Color.accentColor)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(saved.name)
+                    .lineLimit(1)
+                Text("\(saved.kind.title) · \(saved.value)")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer()
+            Text(String(
+                format: L("group.rule.library.usage"),
+                groupStore.referenceCount(forSavedRule: saved.id)
+            ))
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            Button(L("group.edit")) { editing = .edit(saved) }
+                .buttonStyle(.borderless)
+                .font(.caption)
+            Button(L("group.rule.library.delete"), role: .destructive) { pendingDelete = saved }
+                .buttonStyle(.borderless)
+                .font(.caption)
+        }
+        .padding(.vertical, 3)
+        .contextMenu {
+            Button(L("group.edit")) { editing = .edit(saved) }
+            Button(L("group.rule.library.delete"), role: .destructive) { pendingDelete = saved }
+        }
+    }
+
+    private func deleteMessage(for saved: SavedGroupRule) -> String {
+        let usage = groupStore.referenceCount(forSavedRule: saved.id)
+        return String(format: L("group.rule.library.delete.usage"), usage)
+    }
+}
+
+enum SavedRuleEditorContext: Identifiable {
+    case new
+    case edit(SavedGroupRule)
+
+    var id: String {
+        switch self {
+        case .new: return "new"
+        case .edit(let rule): return rule.id.uuidString
+        }
+    }
+}
+
+/// 新建 / 编辑规则库条目；可从现有规则预填
+struct SavedRuleEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var groupStore: ProcessGroupStore
+
+    let savedRule: SavedGroupRule?
+    let prefill: GroupRule?
+
+    @State private var draft: SavedGroupRule
+    @FocusState private var nameFocused: Bool
+
+    init(savedRule: SavedGroupRule?, prefill: GroupRule?) {
+        self.savedRule = savedRule
+        self.prefill = prefill
+        if let savedRule {
+            _draft = State(initialValue: savedRule)
+        } else {
+            _draft = State(initialValue: SavedGroupRule(
+                name: "",
+                kind: prefill?.kind ?? .bundlePattern,
+                value: prefill?.value ?? ""
+            ))
+        }
+    }
+
+    private var isEditing: Bool { savedRule != nil }
+
+    private var canSave: Bool {
+        !draft.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Text(isEditing ? L("group.rule.library.edit") : L("group.rule.library.new"))
+                .font(.headline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L("group.rule.name"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    TextField(L("group.rule.name"), text: $draft.name)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($nameFocused)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L("group.rule.kind"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Picker("", selection: $draft.kind) {
+                        ForEach(GroupRuleKind.allCases) { kind in
+                            Text(kind.title).tag(kind)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L("group.rule.value"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    TextField(draft.kind.placeholder, text: $draft.value)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.body.monospaced())
+                }
+
+                Text(L("group.rule.library.help"))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(14)
+
+            Spacer(minLength: 0)
+
+            Divider()
+
+            HStack {
+                Spacer()
+                Button(L("alert.cancel")) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button(L("group.save")) {
+                    save()
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .disabled(!canSave)
+            }
+            .padding(12)
+        }
+        .frame(width: 460, height: 330)
+        .onAppear { nameFocused = true }
+    }
+
+    private func save() {
+        if isEditing {
+            groupStore.updateSavedRule(draft)
+        } else {
+            groupStore.addSavedRule(draft)
+        }
     }
 }
 

@@ -5,9 +5,13 @@ enum ProcessGroupMatcher {
 
     // MARK: - Match
 
-    static func matches(_ process: MonitoredProcess, group: ProcessFilterGroup) -> Bool {
+    static func matches(
+        _ process: MonitoredProcess,
+        group: ProcessFilterGroup,
+        savedRules: [UUID: SavedGroupRule] = [:]
+    ) -> Bool {
         if group.isDynamic {
-            return evaluate(group.condition, process: process)
+            return evaluate(group.condition, process: process, savedRules: savedRules)
         }
         guard !group.members.isEmpty else { return false }
         let keys = identityKeys(for: process)
@@ -15,30 +19,47 @@ enum ProcessGroupMatcher {
     }
 
     /// 递归求值：规则叶子按取反处理，条件组按 或/且 组合后再取反。
-    /// 空白规则（未填写值）视为无效条件；整个条件树没有有效条件时不匹配任何进程。
-    static func evaluate(_ node: GroupConditionNode, process: MonitoredProcess) -> Bool {
+    /// 规则库引用按当前保存的规则实时求值；引用失效、空白规则、空条件组视为无效条件，
+    /// 整棵树没有有效条件时不匹配任何进程。
+    static func evaluate(
+        _ node: GroupConditionNode,
+        process: MonitoredProcess,
+        savedRules: [UUID: SavedGroupRule] = [:]
+    ) -> Bool {
+        if let ref = node.ruleRef {
+            guard let saved = savedRules[ref] else { return false }
+            let matched = ruleMatches(process, rule: saved.rule)
+            return node.isNegated ? !matched : matched
+        }
         if let rule = node.rule {
             let matched = ruleMatches(process, rule: rule)
             return node.isNegated ? !matched : matched
         }
-        let children = node.children.filter { !isVacuous($0) }
+        let children = node.children.filter { !isVacuous($0, savedRules: savedRules) }
         guard !children.isEmpty else { return false }
         let combined: Bool
         switch node.combinator {
         case .any:
-            combined = children.contains { evaluate($0, process: process) }
+            combined = children.contains { evaluate($0, process: process, savedRules: savedRules) }
         case .all:
-            combined = children.allSatisfy { evaluate($0, process: process) }
+            combined = children.allSatisfy { evaluate($0, process: process, savedRules: savedRules) }
         }
         return node.isNegated ? !combined : combined
     }
 
-    /// 没有任何有效规则的条件（空白规则 / 空条件组）
-    private static func isVacuous(_ node: GroupConditionNode) -> Bool {
+    /// 没有任何有效规则的条件（空白规则 / 失效引用 / 空条件组）
+    private static func isVacuous(
+        _ node: GroupConditionNode,
+        savedRules: [UUID: SavedGroupRule]
+    ) -> Bool {
+        if let ref = node.ruleRef {
+            guard let saved = savedRules[ref] else { return true }
+            return saved.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
         if let rule = node.rule {
             return rule.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
-        return node.children.allSatisfy(isVacuous)
+        return node.children.allSatisfy { isVacuous($0, savedRules: savedRules) }
     }
 
     private static func ruleMatches(_ process: MonitoredProcess, rule: GroupRule) -> Bool {
