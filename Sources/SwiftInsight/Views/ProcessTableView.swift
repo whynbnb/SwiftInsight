@@ -531,6 +531,7 @@ private final class TreeNameCell: NSTableCellView {
     private let disclosure = NSButton()
     private let iconView = NSImageView()
     private let titleField = NSTextField(labelWithString: "")
+    private let tagField = NSTextField(labelWithString: "")
     private var leadingConstraint: NSLayoutConstraint?
     var onToggle: (() -> Void)?
 
@@ -562,11 +563,30 @@ private final class TreeNameCell: NSTableCellView {
         titleField.isBordered = false
         titleField.drawsBackground = false
         titleField.lineBreakMode = .byTruncatingTail
+        // 过长名称只省略、不换行
+        titleField.usesSingleLineMode = true
+        titleField.maximumNumberOfLines = 1
+        titleField.cell?.lineBreakMode = .byTruncatingTail
+        titleField.cell?.wraps = false
         titleField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        tagField.translatesAutoresizingMaskIntoConstraints = false
+        tagField.isEditable = false
+        tagField.isBordered = false
+        tagField.drawsBackground = false
+        tagField.font = NSFont.systemFont(ofSize: 10, weight: .medium)
+        tagField.textColor = .secondaryLabelColor
+        tagField.lineBreakMode = .byClipping
+        tagField.usesSingleLineMode = true
+        tagField.maximumNumberOfLines = 1
+        // 分类标签固定显示，宽度不够时优先截断名称
+        tagField.setContentCompressionResistancePriority(.required, for: .horizontal)
+        tagField.setContentHuggingPriority(.required, for: .horizontal)
 
         addSubview(disclosure)
         addSubview(iconView)
         addSubview(titleField)
+        addSubview(tagField)
         imageView = iconView
         textField = titleField
 
@@ -585,8 +605,11 @@ private final class TreeNameCell: NSTableCellView {
             iconView.heightAnchor.constraint(equalToConstant: 16),
 
             titleField.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 6),
-            titleField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+            titleField.trailingAnchor.constraint(equalTo: tagField.leadingAnchor, constant: -6),
             titleField.centerYAnchor.constraint(equalTo: centerYAnchor),
+
+            tagField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+            tagField.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
     }
 
@@ -617,11 +640,14 @@ private final class TreeNameCell: NSTableCellView {
             disclosure.isEnabled = false
         }
 
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
         let attributed = NSMutableAttributedString(
             string: title,
             attributes: [
                 .font: NSFont.systemFont(ofSize: 12),
                 .foregroundColor: NSColor.labelColor,
+                .paragraphStyle: paragraph,
             ]
         )
         if let memberCount, memberCount > 1 {
@@ -633,15 +659,9 @@ private final class TreeNameCell: NSTableCellView {
                 ]
             ))
         }
-        attributed.append(NSAttributedString(
-            string: "  \(tag)",
-            attributes: [
-                .font: NSFont.systemFont(ofSize: 10, weight: .medium),
-                .foregroundColor: NSColor.secondaryLabelColor,
-            ]
-        ))
         titleField.attributedStringValue = attributed
         titleField.toolTip = toolTip
+        tagField.stringValue = tag
     }
 
     @objc private func toggle() {
