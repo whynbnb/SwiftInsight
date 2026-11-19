@@ -128,6 +128,16 @@ private struct ScopeFilterControl: View {
     }
 }
 
+/// 表格滚动视图：在布局变化时通知协调器调整名称列宽度
+private final class ProcessScrollView: NSScrollView {
+    var onLayout: (@MainActor () -> Void)?
+
+    override func layout() {
+        super.layout()
+        onLayout?()
+    }
+}
+
 private struct ProcessNSTable: NSViewRepresentable {
     let rows: [ProcessDisplayRow]
     @Binding var selectedPID: Int32?
@@ -146,9 +156,10 @@ private struct ProcessNSTable: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSScrollView()
+        let scrollView = ProcessScrollView()
         scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = false
+        // 名称过长 / 窗口过窄时允许横向滚动；筛选条在表格外部，不会跟着滚动
+        scrollView.hasHorizontalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
         scrollView.drawsBackground = false
@@ -160,7 +171,8 @@ private struct ProcessNSTable: NSViewRepresentable {
         table.allowsColumnResizing = true
         table.allowsMultipleSelection = false
         table.allowsEmptySelection = true
-        table.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+        // 列宽由协调器按视口与最长名称计算，不再强制压到视口内
+        table.columnAutoresizingStyle = .noColumnAutoresizing
         table.rowHeight = 28
         table.intercellSpacing = NSSize(width: 8, height: 0)
         table.gridStyleMask = []
@@ -186,6 +198,9 @@ private struct ProcessNSTable: NSViewRepresentable {
         scrollView.documentView = table
         context.coordinator.tableView = table
         context.coordinator.scrollView = scrollView
+        scrollView.onLayout = { [weak coordinator = context.coordinator] in
+            coordinator?.updateNameColumnWidth()
+        }
         return scrollView
     }
 
@@ -214,6 +229,9 @@ private struct ProcessNSTable: NSViewRepresentable {
             .init(id: .init("user"), title: L("table.user"), width: 88, minWidth: 60, numeric: false),
         ]
 
+        static let nameColumnMinWidth: CGFloat = 320
+        static let nameColumnMaxWidth: CGFloat = 1200
+
         var parent: ProcessNSTable
         weak var tableView: NSTableView?
         weak var scrollView: NSScrollView?
@@ -222,6 +240,9 @@ private struct ProcessNSTable: NSViewRepresentable {
         private var isApplying = false
         private var lastSortIndicatorState = ""
         private var iconCache: [String: NSImage] = [:]
+        private var lastDesiredNameWidth: CGFloat = -1
+        private var isAdjustingColumns = false
+        private var textWidthCache: [String: CGFloat] = [:]
 
         init(_ parent: ProcessNSTable) {
             self.parent = parent
@@ -259,6 +280,7 @@ private struct ProcessNSTable: NSViewRepresentable {
                 }
 
                 self.isApplying = false
+                self.updateNameColumnWidth()
             }
 
             if Thread.isMainThread {
@@ -275,6 +297,64 @@ private struct ProcessNSTable: NSViewRepresentable {
                 return nil
             }
             return rows[table.selectedRow].pid
+        }
+
+        // MARK: Column fit
+
+        /// 名称列在「填满视口」和「容纳最长名称」之间取较大值。
+        /// 需要显示更长名称时表格会超出视口，横向滚动条自动出现；
+        /// 上方筛选条不在 NSScrollView 内，因此不会跟着横向滚动。
+        func updateNameColumnWidth() {
+            guard !isAdjustingColumns,
+                  let table = tableView,
+                  let scrollView,
+                  let nameColumn = table.tableColumns.first(where: { $0.identifier.rawValue == "name" }) else {
+                return
+            }
+            let viewport = scrollView.contentView.bounds.width
+            guard viewport > 1 else { return }
+
+            let spacing = table.intercellSpacing.width * CGFloat(table.tableColumns.count)
+            let others = table.tableColumns.reduce(CGFloat(0)) { sum, column in
+                sum + (column === nameColumn ? 0 : column.width)
+            } + spacing + 4
+            let fillWidth = max(Self.nameColumnMinWidth, viewport - others)
+            let desired = min(max(fillWidth, maxNameContentWidth()), Self.nameColumnMaxWidth)
+
+            guard abs(desired - lastDesiredNameWidth) > 0.5 else { return }
+            lastDesiredNameWidth = desired
+            guard abs(nameColumn.width - desired) > 0.5 else { return }
+
+            isAdjustingColumns = true
+            nameColumn.width = desired
+            isAdjustingColumns = false
+        }
+
+        private func maxNameContentWidth() -> CGFloat {
+            let nameFont = NSFont.systemFont(ofSize: 12)
+            let metaFont = NSFont.systemFont(ofSize: 10, weight: .medium)
+            var widest = Self.nameColumnMinWidth
+
+            for row in rows {
+                let indent = CGFloat(row.depth) * 16
+                var width = 40 + indent + textWidth(row.process.name, font: nameFont)
+                if row.hasChildren, row.memberCount > 1 {
+                    width += textWidth("  ·\(row.memberCount)", font: metaFont)
+                }
+                width += 6 + textWidth(row.process.category.shortName, font: metaFont) + 4
+                if width > widest { widest = width }
+            }
+            return widest
+        }
+
+        /// 文本宽度测量带缓存，避免每次刷新对全部行重复测量
+        private func textWidth(_ text: String, font: NSFont) -> CGFloat {
+            let key = "\(font.fontName)|\(font.pointSize)|\(text)"
+            if let cached = textWidthCache[key] { return cached }
+            let width = (text as NSString).size(withAttributes: [.font: font]).width
+            if textWidthCache.count > 1024 { textWidthCache.removeAll(keepingCapacity: true) }
+            textWidthCache[key] = width
+            return width
         }
 
         // MARK: Data source
