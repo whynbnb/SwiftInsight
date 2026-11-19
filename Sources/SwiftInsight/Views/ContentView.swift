@@ -430,6 +430,7 @@ struct RefreshStatusView: View {
 
 struct SummaryBarView: View {
     @EnvironmentObject private var monitor: ProcessMonitor
+    @EnvironmentObject private var groupStore: ProcessGroupStore
 
     var body: some View {
         let s = monitor.summary
@@ -455,6 +456,10 @@ struct SummaryBarView: View {
                 count: s.thirdPartyCount,
                 color: .orange
             )
+            // 自定义分组卡放在分类卡之后
+            if let usage = selectedGroupUsage {
+                groupUsageChip(usage)
+            }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 3) {
                 RefreshStatusView()
@@ -474,6 +479,68 @@ struct SummaryBarView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .animation(.easeInOut(duration: 0.15), value: monitor.isRefreshPaused)
+    }
+
+    private struct GroupUsage {
+        let group: ProcessFilterGroup
+        let cpu: Double
+        let memory: UInt64
+        let count: Int
+    }
+
+    /// 当前选中的自定义分组占用（按分组全量成员统计，不受表格搜索影响）
+    private var selectedGroupUsage: GroupUsage? {
+        guard let group = groupStore.group(with: monitor.groupFilterID) else { return nil }
+        let savedRules = groupStore.savedRulesByID
+        var cpu = 0.0
+        var memory: UInt64 = 0
+        var count = 0
+        for process in monitor.processes
+        where ProcessGroupMatcher.matches(process, group: group, savedRules: savedRules) {
+            count += 1
+            if process.cpuAvailable { cpu += process.cpuPercent }
+            if process.memoryAvailable { memory += process.memoryBytes }
+        }
+        return GroupUsage(group: group, cpu: cpu, memory: memory, count: count)
+    }
+
+    private func groupUsageChip(_ usage: GroupUsage) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 4) {
+                Image(systemName: usage.group.symbolName)
+                    .font(.caption2)
+                    .foregroundStyle(Color.accentColor)
+                Text(shortGroupName(usage.group.name))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text("· \(usage.count)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .monospacedDigit()
+            }
+            HStack(spacing: 10) {
+                Text(String(format: "%.1f%%", usage.cpu))
+                    .font(.system(.body, design: .rounded).weight(.semibold))
+                    .monospacedDigit()
+                Text(ByteCountFormatter.string(fromByteCount: Int64(usage.memory), countStyle: .memory))
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.accentColor.opacity(0.10))
+        }
+        .help("\(usage.group.name)\n\(L("summary.group.help"))")
+    }
+
+    /// 分组卡保持紧凑：名称过长时直接截断，完整名称放在 tooltip 里
+    private func shortGroupName(_ name: String) -> String {
+        name.count <= 16 ? name : String(name.prefix(15)) + "…"
     }
 
     private func summaryChip(title: String, cpu: Double, memory: UInt64, count: Int, color: Color) -> some View {
