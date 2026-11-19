@@ -13,6 +13,7 @@ enum BuiltinRuleID {
     static let kernelBootstrap = UUID(uuidString: "A8C5ACE6-CAAB-4420-8C75-B43C9D66AA23")!
     static let foregroundApp = UUID(uuidString: "05914CEC-0AF5-44C1-9E90-7D16738FD2E8")!
     static let backgroundProcess = UUID(uuidString: "B2455F99-A011-4A44-AD51-E2BCE8B10843")!
+    static let shellProcess = UUID(uuidString: "A0E4A84E-DD0D-41FE-B194-234A93D07021")!
     static let pathEmpty = UUID(uuidString: "05951971-00B3-4AA9-BAAF-F01DF5538136")!
 }
 
@@ -168,6 +169,14 @@ enum BuiltinRuleCatalog {
             condition: not(rule(.processKind, ProcessKind.app.rawValue))
         ),
         Definition(
+            id: BuiltinRuleID.shellProcess,
+            nameKey: "group.builtin.shell_process",
+            detailKey: "group.builtin.shell_process.detail",
+            content: .rule,
+            kind: .processKind,
+            value: ProcessKind.shell.rawValue
+        ),
+        Definition(
             id: BuiltinRuleID.pathEmpty,
             nameKey: "group.builtin.path_empty",
             detailKey: "group.builtin.path_empty.detail",
@@ -195,7 +204,9 @@ enum BuiltinRuleCatalog {
 
     private static var appleSystemCondition: GroupConditionNode {
         any([
-            rule(.knownSystemProcess),
+            // 已知系统进程名只用于「拿不到路径」的兜底，避免把 /usr/bin 里的
+            // osascript、ssh-agent、zsh 等用户命令误判为系统进程。
+            all([rule(.pathEmpty), rule(.knownSystemProcess)]),
             all([ref(BuiltinRuleID.appleBundle), rule(.systemPath)]),
             all([ref(BuiltinRuleID.appleBundle), daemonOrHelperCondition]),
             rule(.systemPath),
@@ -222,10 +233,12 @@ enum BuiltinRuleCatalog {
     }
 
     private static var thirdPartyCondition: GroupConditionNode {
+        // 兜底分类：不属于 Apple 系统 / Apple 应用的都是用户或第三方进程。
+        // 不再要求「路径非空」——zsh、git、grep 等从当前会话启动的进程
+        // 可能暂时拿不到路径，但它们显然不是系统进程。
         all([
             not(ref(BuiltinRuleID.appleSystem)),
             not(ref(BuiltinRuleID.appleApp)),
-            not(rule(.pathEmpty)),
         ])
     }
 

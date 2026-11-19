@@ -5,11 +5,16 @@ import AppKit
 enum ProcessClassifier {
 
     // MARK: - 系统路径前缀（支持系统运行的核心组件）
+    //
+    // 注意不要收录 /usr/ 和 /bin/ 这类宽泛前缀：它们同时包含用户命令
+    //（zsh、git、grep、sleep、login 等），会把用户进程误判为 Apple 系统。
+    // 系统守护进程集中在 /usr/libexec、/usr/sbin、/sbin、/System 等目录。
 
     private static let systemPathPrefixes: [String] = [
         "/System/",
-        "/usr/",
-        "/bin/",
+        "/usr/libexec/",
+        "/usr/sbin/",
+        "/usr/lib/",
         "/sbin/",
         "/private/var/db/",
         "/Library/Apple/",

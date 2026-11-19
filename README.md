@@ -44,6 +44,7 @@ Focus: **Apple vs third-party** resource breakdown, a **stable menu-bar panel**,
 
 ### Process monitoring
 - Search, category filters, and a **scope filter in the table header**: All / Foreground Apps / Background processes  
+- Classification uses system directories and process kind: user processes such as `zsh`, `git`, and `ssh-agent` under `/bin` or `/usr/bin` count as Third Party, not Apple System  
 - **Click column headers to sort** (name / CPU % / memory / PID / threads), with an up/down arrow on the active column  
 - Quit / force quit, Reveal in Finder  
 - Hold **⌃ Control** to pause **main-window** auto-refresh only, or use the toolbar **Lock Data** button (menu bar keeps sampling)
