@@ -128,13 +128,25 @@ private struct ScopeFilterControl: View {
     }
 }
 
-/// 表格滚动视图：在布局变化时通知协调器调整名称列宽度
+/// 表格滚动视图：布局变化时同步列宽
 private final class ProcessScrollView: NSScrollView {
     var onLayout: (@MainActor () -> Void)?
 
     override func layout() {
         super.layout()
         onLayout?()
+    }
+}
+
+/// 表头视图：区分「用户拖动列宽」和程序自动铺满
+private final class ProcessHeaderView: NSTableHeaderView {
+    var onUserResizeBegin: (@MainActor () -> Void)?
+    var onUserResizeEnd: (@MainActor () -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        onUserResizeBegin?()
+        super.mouseDown(with: event)
+        onUserResizeEnd?()
     }
 }
 
@@ -171,24 +183,37 @@ private struct ProcessNSTable: NSViewRepresentable {
         table.allowsColumnResizing = true
         table.allowsMultipleSelection = false
         table.allowsEmptySelection = true
-        // 列宽由协调器按视口与最长名称计算，不再强制压到视口内
+        // 数据列保持默认 / 用户调整后的宽度；窗口更宽时右侧留空，更窄时横向滚动
         table.columnAutoresizingStyle = .noColumnAutoresizing
         table.rowHeight = 28
         table.intercellSpacing = NSSize(width: 8, height: 0)
         table.gridStyleMask = []
-        table.headerView = NSTableHeaderView()
+        let header = ProcessHeaderView()
+        header.onUserResizeBegin = { [weak coordinator = context.coordinator] in
+            coordinator?.beginUserColumnResize()
+        }
+        header.onUserResizeEnd = { [weak coordinator = context.coordinator] in
+            coordinator?.endUserColumnResize()
+        }
+        table.headerView = header
         table.delegate = context.coordinator
         table.dataSource = context.coordinator
         table.target = context.coordinator
         table.doubleAction = #selector(Coordinator.doubleClicked(_:))
         table.menu = context.coordinator.makeContextMenu()
 
+        let savedWidths = Coordinator.savedColumnWidths()
         for col in Coordinator.columns {
             let column = NSTableColumn(identifier: col.id)
             column.title = col.title
             column.width = col.width
             column.minWidth = col.minWidth
             column.resizingMask = .userResizingMask
+            if let saved = savedWidths[col.id.rawValue],
+               saved >= Double(col.minWidth),
+               saved <= 2_000 {
+                column.width = CGFloat(saved)
+            }
             if col.numeric {
                 column.headerCell.alignment = .right
             }
@@ -198,8 +223,10 @@ private struct ProcessNSTable: NSViewRepresentable {
         scrollView.documentView = table
         context.coordinator.tableView = table
         context.coordinator.scrollView = scrollView
+        // 未手动调整过列宽时，按窗口宽度自动铺满
+        context.coordinator.autoFitColumns = savedWidths.isEmpty
         scrollView.onLayout = { [weak coordinator = context.coordinator] in
-            coordinator?.updateNameColumnWidth()
+            coordinator?.fitColumnsIfNeeded()
         }
         return scrollView
     }
@@ -208,6 +235,7 @@ private struct ProcessNSTable: NSViewRepresentable {
         context.coordinator.parent = self
         context.coordinator.apply(rows: rows, selectedPID: selectedPID)
         context.coordinator.syncSortIndicator()
+        context.coordinator.fitColumnsIfNeeded()
     }
 
     @MainActor
@@ -229,20 +257,26 @@ private struct ProcessNSTable: NSViewRepresentable {
             .init(id: .init("user"), title: L("table.user"), width: 88, minWidth: 60, numeric: false),
         ]
 
-        static let nameColumnMinWidth: CGFloat = 320
-        static let nameColumnMaxWidth: CGFloat = 1200
+        static let nameColumnMaxWidth: CGFloat = 560
+        static let columnWidthsKey = "viewColumnWidthsV3"
 
         var parent: ProcessNSTable
         weak var tableView: NSTableView?
         weak var scrollView: NSScrollView?
 
+        /// 未手动调整列宽时按窗口宽度铺满；用户拖动后改为固定宽度并记忆
+        var autoFitColumns = true
+        private var widthsBeforeUserResize: [CGFloat] = []
         private var rows: [ProcessDisplayRow] = []
         private var isApplying = false
         private var lastSortIndicatorState = ""
         private var iconCache: [String: NSImage] = [:]
-        private var lastDesiredNameWidth: CGFloat = -1
-        private var isAdjustingColumns = false
-        private var textWidthCache: [String: CGFloat] = [:]
+
+        /// 恢复用户上次调整的列宽（受「记住界面状态」控制）
+        static func savedColumnWidths() -> [String: Double] {
+            guard AppPreferences.shared.rememberViewState else { return [:] }
+            return UserDefaults.standard.dictionary(forKey: columnWidthsKey) as? [String: Double] ?? [:]
+        }
 
         init(_ parent: ProcessNSTable) {
             self.parent = parent
@@ -280,7 +314,6 @@ private struct ProcessNSTable: NSViewRepresentable {
                 }
 
                 self.isApplying = false
-                self.updateNameColumnWidth()
             }
 
             if Thread.isMainThread {
@@ -299,62 +332,78 @@ private struct ProcessNSTable: NSViewRepresentable {
             return rows[table.selectedRow].pid
         }
 
-        // MARK: Column fit
+        // MARK: Column widths
 
-        /// 名称列在「填满视口」和「容纳最长名称」之间取较大值。
-        /// 需要显示更长名称时表格会超出视口，横向滚动条自动出现；
-        /// 上方筛选条不在 NSScrollView 内，因此不会跟着横向滚动。
-        func updateNameColumnWidth() {
-            guard !isAdjustingColumns,
+        /// 未手动调整过列宽时，把窗口多余宽度按比例分配给各列；
+        /// 名称列有上限，避免它独占整张表。用户拖动后改为固定宽度并记忆。
+        func fitColumnsIfNeeded() {
+            guard autoFitColumns,
                   let table = tableView,
-                  let scrollView,
-                  let nameColumn = table.tableColumns.first(where: { $0.identifier.rawValue == "name" }) else {
-                return
-            }
+                  let scrollView else { return }
             let viewport = scrollView.contentView.bounds.width
             guard viewport > 1 else { return }
 
-            let spacing = table.intercellSpacing.width * CGFloat(table.tableColumns.count)
-            let others = table.tableColumns.reduce(CGFloat(0)) { sum, column in
-                sum + (column === nameColumn ? 0 : column.width)
-            } + spacing + 4
-            let fillWidth = max(Self.nameColumnMinWidth, viewport - others)
-            let desired = min(max(fillWidth, maxNameContentWidth()), Self.nameColumnMaxWidth)
+            let columns = table.tableColumns
+            let widths = targetWidths(for: table, viewport: viewport)
+            guard widths.count == columns.count else { return }
 
-            guard abs(desired - lastDesiredNameWidth) > 0.5 else { return }
-            lastDesiredNameWidth = desired
-            guard abs(nameColumn.width - desired) > 0.5 else { return }
-
-            isAdjustingColumns = true
-            nameColumn.width = desired
-            isAdjustingColumns = false
-        }
-
-        private func maxNameContentWidth() -> CGFloat {
-            let nameFont = NSFont.systemFont(ofSize: 12)
-            let metaFont = NSFont.systemFont(ofSize: 10, weight: .medium)
-            var widest = Self.nameColumnMinWidth
-
-            for row in rows {
-                let indent = CGFloat(row.depth) * 16
-                var width = 40 + indent + textWidth(row.process.name, font: nameFont)
-                if row.hasChildren, row.memberCount > 1 {
-                    width += textWidth("  ·\(row.memberCount)", font: metaFont)
-                }
-                width += 6 + textWidth(row.process.category.shortName, font: metaFont) + 4
-                if width > widest { widest = width }
+            for (index, column) in columns.enumerated() where abs(column.width - widths[index]) > 0.5 {
+                column.width = widths[index]
             }
-            return widest
         }
 
-        /// 文本宽度测量带缓存，避免每次刷新对全部行重复测量
-        private func textWidth(_ text: String, font: NSFont) -> CGFloat {
-            let key = "\(font.fontName)|\(font.pointSize)|\(text)"
-            if let cached = textWidthCache[key] { return cached }
-            let width = (text as NSString).size(withAttributes: [.font: font]).width
-            if textWidthCache.count > 1024 { textWidthCache.removeAll(keepingCapacity: true) }
-            textWidthCache[key] = width
-            return width
+        /// 自动铺满时的目标列宽：名称列优先但不超过上限，其余列按基础宽度分剩余空间
+        private func targetWidths(for table: NSTableView, viewport: CGFloat) -> [CGFloat] {
+            let baseWidths = Self.columns.map(\.width)
+            let spacing = table.intercellSpacing.width * CGFloat(baseWidths.count)
+            let baseTotal = baseWidths.reduce(0, +) + spacing
+            // inset 样式与分隔线会占用少量宽度，留出余量避免出现细小的横向滚动条
+            let usableWidth = max(0, viewport - 20)
+            var widths = baseWidths
+
+            if usableWidth > baseTotal + 0.5 {
+                var extra = usableWidth - baseTotal
+
+                let nameIdeal = extra * (baseWidths[0] / baseTotal)
+                let nameExtra = min(nameIdeal, Self.nameColumnMaxWidth - baseWidths[0])
+                widths[0] += max(0, nameExtra)
+                extra -= max(0, nameExtra)
+
+                let othersBase = baseWidths.dropFirst().reduce(0, +)
+                if extra > 0, othersBase > 0 {
+                    for index in widths.indices.dropFirst() {
+                        widths[index] += extra * (baseWidths[index] / othersBase)
+                    }
+                }
+            }
+            return widths
+        }
+
+        // MARK: User column resize
+
+        func beginUserColumnResize() {
+            widthsBeforeUserResize = tableView?.tableColumns.map(\.width) ?? []
+        }
+
+        func endUserColumnResize() {
+            guard let table = tableView else { return }
+            let current = table.tableColumns.map(\.width)
+            // 只点击表头排序、没有拖动分隔线时，宽度不变
+            guard current != widthsBeforeUserResize else { return }
+            autoFitColumns = false
+            saveColumnWidths()
+        }
+
+        private func saveColumnWidths() {
+            guard AppPreferences.shared.rememberViewState, let table = tableView else { return }
+
+            var widths: [String: Double] = [:]
+            for column in table.tableColumns {
+                widths[column.identifier.rawValue] = Double(column.width)
+            }
+            let saved = UserDefaults.standard.dictionary(forKey: Self.columnWidthsKey) as? [String: Double] ?? [:]
+            guard widths != saved else { return }
+            UserDefaults.standard.set(widths, forKey: Self.columnWidthsKey)
         }
 
         // MARK: Data source
