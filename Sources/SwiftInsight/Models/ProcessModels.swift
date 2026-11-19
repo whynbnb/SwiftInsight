@@ -115,13 +115,26 @@ enum ProcessScope: String, CaseIterable, Identifiable {
     }
 }
 
-enum ProcessKind: String, Codable {
+enum ProcessKind: String, Codable, CaseIterable, Identifiable {
     case app
     case daemon
     case helper
     case kernel
     case shell
     case other
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .app: return L("kind.app")
+        case .daemon: return L("kind.daemon")
+        case .helper: return L("kind.helper")
+        case .kernel: return L("kind.kernel")
+        case .shell: return L("kind.shell")
+        case .other: return L("kind.other")
+        }
+    }
 }
 
 struct MonitoredProcess: Identifiable, Hashable {

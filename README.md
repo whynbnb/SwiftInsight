@@ -53,6 +53,7 @@ Focus: **Apple vs third-party** resource breakdown, a **stable menu-bar panel**,
 - **Dynamic** groups match a condition tree with **AND / OR / NOT** and **nested** groups — e.g. “browsers except this build” or “everything outside /System”
 - Each rule can use **Bundle ID wildcard** · **name wildcard** (`*` any characters, `?` one character) · Bundle ID prefix · name contains · path contains · user
 - **Rule library**: save reusable named rules and insert them with **Reference Rule**; a **static group** can be saved as a rule set (fixed app list) and referenced anywhere; edits apply to every reference instantly
+- **Built-in rules**: Apple System / Apple Apps / Third Party are decomposed into composable primitives (system paths, Apple Bundle ID, Apple app paths, known system processes, process kind, foreground/background); the sidebar categories and custom references share the same logic
 - **Static** groups hold a fixed app list you curate
 - Add apps from the global view: right-click a row → **Add to Group**, or **New Group with This Process** to create a group from that app
 - The group editor searches all running apps, so membership can be changed at any time

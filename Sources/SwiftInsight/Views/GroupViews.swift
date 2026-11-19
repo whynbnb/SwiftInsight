@@ -356,7 +356,7 @@ struct GroupEditorView: View {
                     depth: 0,
                     isRoot: true,
                     onRemove: nil,
-                    savedRules: groupStore.savedRules,
+                    savedRules: groupStore.allRules,
                     onOpenLibrary: { sheetRoute = .ruleLibrary },
                     onSaveRule: { sheetRoute = .saveRule($0) }
                 )
@@ -492,7 +492,15 @@ private struct GroupConditionEditor: View {
     private var ruleKind: Binding<GroupRuleKind> {
         Binding(
             get: { node.rule?.kind ?? .bundlePattern },
-            set: { node.rule?.kind = $0 }
+            set: { kind in
+                node.rule?.kind = kind
+                if !kind.requiresValue {
+                    node.rule?.value = ""
+                } else if kind == .processKind,
+                          ProcessKind(rawValue: node.rule?.value.lowercased() ?? "") == nil {
+                    node.rule?.value = ProcessKind.app.rawValue
+                }
+            }
         )
     }
 
@@ -501,6 +509,74 @@ private struct GroupConditionEditor: View {
             get: { node.rule?.value ?? "" },
             set: { node.rule?.value = $0 }
         )
+    }
+
+    private var processKindValue: Binding<ProcessKind> {
+        Binding(
+            get: { ProcessKind(rawValue: node.rule?.value.lowercased() ?? "") ?? .app },
+            set: { node.rule?.value = $0.rawValue }
+        )
+    }
+
+    private var builtinRules: [SavedGroupRule] {
+        savedRules.filter(\.isBuiltin)
+    }
+
+    private var customRules: [SavedGroupRule] {
+        savedRules.filter { !$0.isBuiltin }
+    }
+
+    private func summary(for saved: SavedGroupRule) -> String {
+        if saved.isAppSet {
+            return String(format: L("group.rule.library.set.summary"), saved.members.count)
+        }
+        if !saved.detail.isEmpty { return saved.detail }
+        if saved.isCondition { return L("group.rule.library.composite") }
+        return "\(saved.kind.title) · \(saved.value)"
+    }
+
+    @ViewBuilder
+    private func choiceLabel(_ saved: SavedGroupRule, selected: UUID?) -> some View {
+        if saved.id == selected {
+            Label(saved.name, systemImage: "checkmark")
+        } else {
+            Text(saved.name)
+        }
+    }
+
+    @ViewBuilder
+    private func ruleChoices(onPick: @escaping (UUID) -> Void, selected: UUID? = nil) -> some View {
+        if !builtinRules.isEmpty {
+            Menu(L("group.rule.builtin")) {
+                ForEach(builtinRules) { saved in
+                    Button {
+                        onPick(saved.id)
+                    } label: {
+                        choiceLabel(saved, selected: selected)
+                    }
+                }
+            }
+        }
+        if !customRules.isEmpty {
+            Menu(L("group.rule.custom")) {
+                ForEach(customRules) { saved in
+                    Button {
+                        onPick(saved.id)
+                    } label: {
+                        choiceLabel(saved, selected: selected)
+                    }
+                }
+            }
+        }
+        if savedRules.isEmpty {
+            Button(L("group.rule.library_empty")) {}
+                .disabled(true)
+        }
+    }
+
+    private var canSaveRuleToLibrary: Bool {
+        guard let rule = node.rule, rule.kind.requiresValue else { return false }
+        return !rule.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// 与当前规则完全相同的规则库条目（用于显示「已保存」）
@@ -528,9 +604,25 @@ private struct GroupConditionEditor: View {
             .pickerStyle(.menu)
             .frame(width: 142)
 
-            TextField(node.rule?.kind.placeholder ?? "", text: ruleValue)
-                .textFieldStyle(.roundedBorder)
-                .font(.caption.monospaced())
+            if node.rule?.kind == .processKind {
+                Picker("", selection: processKindValue) {
+                    ForEach(ProcessKind.allCases) { kind in
+                        Text(kind.displayName).tag(kind)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(width: 130)
+            } else if let kind = node.rule?.kind, !kind.requiresValue {
+                Text(L("group.rule.no_value"))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                TextField(node.rule?.kind.placeholder ?? "", text: ruleValue)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.caption.monospaced())
+            }
 
             Button {
                 if let rule = node.rule { onSaveRule(rule) }
@@ -540,7 +632,7 @@ private struct GroupConditionEditor: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(matchingSavedRule != nil || (node.rule?.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true))
+            .disabled(!canSaveRuleToLibrary || matchingSavedRule != nil)
             .help(matchingSavedRule == nil ? L("group.rule.save_to_library") : L("group.rule.saved_to_library"))
 
             if !isRoot, let onRemove {
@@ -561,22 +653,7 @@ private struct GroupConditionEditor: View {
             negateButton
 
             Menu {
-                if savedRules.isEmpty {
-                    Button(L("group.rule.library_empty")) {}
-                        .disabled(true)
-                } else {
-                    ForEach(savedRules) { saved in
-                        Button {
-                            node.ruleRef = saved.id
-                        } label: {
-                            if saved.id == node.ruleRef {
-                                Label(saved.name, systemImage: "checkmark")
-                            } else {
-                                Text(saved.name)
-                            }
-                        }
-                    }
-                }
+                ruleChoices(onPick: { node.ruleRef = $0 }, selected: node.ruleRef)
                 Divider()
                 Button(L("group.rule.manage_library")) { onOpenLibrary() }
             } label: {
@@ -594,9 +671,7 @@ private struct GroupConditionEditor: View {
             .frame(width: 210)
 
             if let saved = currentSavedRule {
-                Text(saved.isAppSet
-                     ? String(format: L("group.rule.library.set.summary"), saved.members.count)
-                     : "\(saved.kind.title) · \(saved.value)")
+                Text(summary(for: saved))
                     .font(.caption2.monospaced())
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
@@ -676,16 +751,9 @@ private struct GroupConditionEditor: View {
                 }
 
                 Menu {
-                    if savedRules.isEmpty {
-                        Button(L("group.rule.library_empty")) {}
-                            .disabled(true)
-                    } else {
-                        ForEach(savedRules) { saved in
-                            Button(saved.name) {
-                                node.children.append(GroupConditionNode(ruleRef: saved.id))
-                            }
-                        }
-                    }
+                    ruleChoices(onPick: { id in
+                        node.children.append(GroupConditionNode(ruleRef: id))
+                    })
                     Divider()
                     Button(L("group.rule.manage_library")) { onOpenLibrary() }
                 } label: {
@@ -779,26 +847,26 @@ struct RuleLibrarySheet: View {
 
             Divider()
 
-            if groupStore.savedRules.isEmpty {
-                VStack(spacing: 8) {
-                    Text(L("group.rule.library.empty_hint"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                    Button(L("group.rule.library.new")) {
-                        editing = .new
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(20)
-            } else {
-                List {
-                    ForEach(groupStore.savedRules) { saved in
+            List {
+                Section(L("group.rule.builtin")) {
+                    ForEach(builtinRules) { saved in
                         savedRuleRow(saved)
                     }
                 }
-                .listStyle(.inset)
+
+                Section(L("group.rule.custom")) {
+                    if customRules.isEmpty {
+                        Text(L("group.rule.library.empty_hint"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(customRules) { saved in
+                            savedRuleRow(saved)
+                        }
+                    }
+                }
             }
+            .listStyle(.inset)
 
             Divider()
 
@@ -844,19 +912,27 @@ struct RuleLibrarySheet: View {
         }
     }
 
+    private var builtinRules: [SavedGroupRule] {
+        groupStore.allRules.filter(\.isBuiltin)
+    }
+
+    private var customRules: [SavedGroupRule] {
+        groupStore.allRules.filter { !$0.isBuiltin }
+    }
+
     private func savedRuleRow(_ saved: SavedGroupRule) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: saved.isAppSet ? "square.stack.3d.up.fill" : "bookmark.fill")
-                .foregroundStyle(Color.accentColor)
+            Image(systemName: saved.isBuiltin
+                  ? "lock.shield.fill"
+                  : (saved.isAppSet ? "square.stack.3d.up.fill" : "bookmark.fill"))
+                .foregroundStyle(saved.isBuiltin ? Color.secondary : Color.accentColor)
             VStack(alignment: .leading, spacing: 2) {
                 Text(saved.name)
                     .lineLimit(1)
-                Text(saved.isAppSet
-                     ? String(format: L("group.rule.library.set.summary"), saved.members.count)
-                     : "\(saved.kind.title) · \(saved.value)")
+                Text(summary(for: saved))
                     .font(.caption2.monospaced())
                     .foregroundStyle(.tertiary)
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .truncationMode(.middle)
             }
             Spacer()
@@ -866,18 +942,36 @@ struct RuleLibrarySheet: View {
             ))
             .font(.caption2)
             .foregroundStyle(.tertiary)
-            Button(L("group.edit")) { editing = .edit(saved) }
-                .buttonStyle(.borderless)
-                .font(.caption)
-            Button(L("group.rule.library.delete"), role: .destructive) { pendingDelete = saved }
-                .buttonStyle(.borderless)
-                .font(.caption)
+
+            if saved.isBuiltin {
+                Text(L("group.rule.builtin.readonly"))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            } else {
+                Button(L("group.edit")) { editing = .edit(saved) }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                Button(L("group.rule.library.delete"), role: .destructive) { pendingDelete = saved }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+            }
         }
         .padding(.vertical, 3)
         .contextMenu {
-            Button(L("group.edit")) { editing = .edit(saved) }
-            Button(L("group.rule.library.delete"), role: .destructive) { pendingDelete = saved }
+            if !saved.isBuiltin {
+                Button(L("group.edit")) { editing = .edit(saved) }
+                Button(L("group.rule.library.delete"), role: .destructive) { pendingDelete = saved }
+            }
         }
+    }
+
+    private func summary(for saved: SavedGroupRule) -> String {
+        if saved.isAppSet {
+            return String(format: L("group.rule.library.set.summary"), saved.members.count)
+        }
+        if !saved.detail.isEmpty { return saved.detail }
+        if saved.isCondition { return L("group.rule.library.composite") }
+        return "\(saved.kind.title) · \(saved.value)"
     }
 
     private func deleteMessage(for saved: SavedGroupRule) -> String {
@@ -936,7 +1030,31 @@ struct SavedRuleEditorSheet: View {
 
     private var canSave: Bool {
         if draft.isAppSet { return !draft.members.isEmpty }
+        if draft.isCondition { return draft.condition != nil }
+        if !draft.kind.requiresValue { return true }
         return !draft.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var kindBinding: Binding<GroupRuleKind> {
+        Binding(
+            get: { draft.kind },
+            set: { kind in
+                draft.kind = kind
+                if !kind.requiresValue {
+                    draft.value = ""
+                } else if kind == .processKind,
+                          ProcessKind(rawValue: draft.value.lowercased()) == nil {
+                    draft.value = ProcessKind.app.rawValue
+                }
+            }
+        )
+    }
+
+    private var processKindValue: Binding<ProcessKind> {
+        Binding(
+            get: { ProcessKind(rawValue: draft.value.lowercased()) ?? .app },
+            set: { draft.value = $0.rawValue }
+        )
     }
 
     private var title: String {
@@ -1004,7 +1122,7 @@ struct SavedRuleEditorSheet: View {
                 Text(L("group.rule.kind"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                Picker("", selection: $draft.kind) {
+                Picker("", selection: kindBinding) {
                     ForEach(GroupRuleKind.allCases) { kind in
                         Text(kind.title).tag(kind)
                     }
@@ -1017,9 +1135,23 @@ struct SavedRuleEditorSheet: View {
                 Text(L("group.rule.value"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                TextField(draft.kind.placeholder, text: $draft.value)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.body.monospaced())
+                if draft.kind == .processKind {
+                    Picker("", selection: processKindValue) {
+                        ForEach(ProcessKind.allCases) { kind in
+                            Text(kind.displayName).tag(kind)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                } else if draft.kind.requiresValue {
+                    TextField(draft.kind.placeholder, text: $draft.value)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.body.monospaced())
+                } else {
+                    Text(L("group.rule.no_value"))
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
             }
         }
     }
@@ -1081,6 +1213,7 @@ struct SavedRuleEditorSheet: View {
     }
 
     private func save() {
+        guard !draft.isBuiltin else { return }
         if isEditing {
             groupStore.updateSavedRule(draft)
         } else {

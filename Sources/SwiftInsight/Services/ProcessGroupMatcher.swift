@@ -1,6 +1,27 @@
 import Foundation
 
-/// 自定义分组匹配：动态条件树（或/且/非、嵌套）或静态应用成员
+/// 规则求值所需的进程信息（分类器在生成 ProcessKind 后也能直接复用）
+struct ProcessRuleContext {
+    let name: String
+    let path: String
+    let bundleIdentifier: String?
+    let kind: ProcessKind
+    let username: String
+}
+
+extension MonitoredProcess {
+    var ruleContext: ProcessRuleContext {
+        ProcessRuleContext(
+            name: name,
+            path: path,
+            bundleIdentifier: bundleIdentifier,
+            kind: kind,
+            username: username
+        )
+    }
+}
+
+/// 自定义分组匹配：动态条件树（或/且/非、嵌套、规则库引用）或静态应用成员
 enum ProcessGroupMatcher {
 
     // MARK: - Match
@@ -11,34 +32,52 @@ enum ProcessGroupMatcher {
         savedRules: [UUID: SavedGroupRule] = [:]
     ) -> Bool {
         if group.isDynamic {
-            return evaluate(group.condition, process: process, savedRules: savedRules)
+            return evaluate(group.condition, context: process.ruleContext, savedRules: savedRules)
         }
         guard !group.members.isEmpty else { return false }
-        let keys = identityKeys(for: process)
+        let keys = identityKeys(for: process.ruleContext)
         return group.members.contains { keys.contains($0.id) }
     }
 
-    /// 递归求值：规则叶子按取反处理，条件组按 或/且 组合后再取反。
-    /// 规则库引用按当前保存的规则实时求值；引用失效、空白规则、空条件组视为无效条件，
-    /// 整棵树没有有效条件时不匹配任何进程。
     static func evaluate(
         _ node: GroupConditionNode,
         process: MonitoredProcess,
         savedRules: [UUID: SavedGroupRule] = [:]
     ) -> Bool {
+        evaluate(node, context: process.ruleContext, savedRules: savedRules)
+    }
+
+    /// 递归求值：规则叶子按取反处理，条件组按 或/且 组合后再取反。
+    /// 规则库引用按当前保存的规则实时求值；引用失效、空白规则、空条件组视为无效条件，
+    /// 整棵树没有有效条件时不匹配任何进程。visiting 用于阻断规则集之间的循环引用。
+    static func evaluate(
+        _ node: GroupConditionNode,
+        context: ProcessRuleContext,
+        savedRules: [UUID: SavedGroupRule] = [:],
+        visiting: Set<UUID> = []
+    ) -> Bool {
         if let ref = node.ruleRef {
-            guard let saved = savedRules[ref] else { return false }
+            guard let saved = savedRules[ref], !visiting.contains(ref) else { return false }
             let matched: Bool
-            if saved.isAppSet {
-                let keys = identityKeys(for: process)
+            switch saved.content {
+            case .appSet:
+                let keys = identityKeys(for: context)
                 matched = saved.members.contains { keys.contains($0.id) }
-            } else {
-                matched = ruleMatches(process, rule: saved.rule)
+            case .rule:
+                matched = ruleMatches(context, rule: saved.rule)
+            case .condition:
+                guard let condition = saved.condition else { return false }
+                matched = evaluate(
+                    condition,
+                    context: context,
+                    savedRules: savedRules,
+                    visiting: visiting.union([ref])
+                )
             }
             return node.isNegated ? !matched : matched
         }
         if let rule = node.rule {
-            let matched = ruleMatches(process, rule: rule)
+            let matched = ruleMatches(context, rule: rule)
             return node.isNegated ? !matched : matched
         }
         let children = node.children.filter { !isVacuous($0, savedRules: savedRules) }
@@ -46,9 +85,13 @@ enum ProcessGroupMatcher {
         let combined: Bool
         switch node.combinator {
         case .any:
-            combined = children.contains { evaluate($0, process: process, savedRules: savedRules) }
+            combined = children.contains {
+                evaluate($0, context: context, savedRules: savedRules, visiting: visiting)
+            }
         case .all:
-            combined = children.allSatisfy { evaluate($0, process: process, savedRules: savedRules) }
+            combined = children.allSatisfy {
+                evaluate($0, context: context, savedRules: savedRules, visiting: visiting)
+            }
         }
         return node.isNegated ? !combined : combined
     }
@@ -60,48 +103,94 @@ enum ProcessGroupMatcher {
     ) -> Bool {
         if let ref = node.ruleRef {
             guard let saved = savedRules[ref] else { return true }
-            if saved.isAppSet { return saved.members.isEmpty }
-            return saved.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            switch saved.content {
+            case .appSet:
+                return saved.members.isEmpty
+            case .rule:
+                return saved.rule.kind.requiresValue
+                    && saved.rule.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            case .condition:
+                return saved.condition == nil
+            }
         }
         if let rule = node.rule {
-            return rule.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            return rule.kind.requiresValue
+                && rule.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
         return node.children.allSatisfy { isVacuous($0, savedRules: savedRules) }
     }
 
-    private static func ruleMatches(_ process: MonitoredProcess, rule: GroupRule) -> Bool {
+    private static func ruleMatches(_ context: ProcessRuleContext, rule: GroupRule) -> Bool {
         let value = rule.value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !value.isEmpty else { return false }
         switch rule.kind {
+        case .pathEmpty:
+            return context.path.isEmpty
+        case .appleBundleID:
+            let ids = [
+                context.bundleIdentifier,
+                context.bundleIdentifier.map(ProcessAggregator.familyBundleID),
+            ].compactMap { $0?.lowercased() }
+            return ids.contains {
+                $0.hasPrefix("com.apple.") || $0 == "com.apple" || $0.hasPrefix("edu.mit.kerberos")
+            }
+        case .systemPath:
+            return ProcessClassifier.isSystemPath(context.path)
+        case .appleAppPath:
+            return ProcessClassifier.isAppleAppPath(context.path)
+        case .knownSystemProcess:
+            return ProcessClassifier.isKnownSystemProcess(context.name)
+        case .processKind:
+            return ProcessKind(rawValue: value) == context.kind
+        case .nameExact:
+            guard !value.isEmpty else { return false }
+            return context.name.lowercased() == value
+                || ProcessAggregator.familyName(context.name).lowercased() == value
+        case .pathPrefix:
+            guard !value.isEmpty else { return false }
+            return context.path.lowercased().hasPrefix(value)
+        case .bundlePattern, .namePattern, .bundlePrefix, .nameContains, .pathContains, .user:
+            guard !value.isEmpty else { return false }
+            return valueMatches(context, kind: rule.kind, value: value)
+        }
+    }
+
+    private static func valueMatches(
+        _ context: ProcessRuleContext,
+        kind: GroupRuleKind,
+        value: String
+    ) -> Bool {
+        switch kind {
         case .bundlePattern:
             var ids: [String] = []
-            if let bid = process.bundleIdentifier, !bid.isEmpty {
+            if let bid = context.bundleIdentifier, !bid.isEmpty {
                 ids.append(bid.lowercased())
                 ids.append(ProcessAggregator.familyBundleID(bid).lowercased())
             }
             return ids.contains { wildcardMatch(pattern: value, text: $0) }
         case .namePattern:
             let names = [
-                process.name.lowercased(),
-                ProcessAggregator.familyName(process.name).lowercased(),
+                context.name.lowercased(),
+                ProcessAggregator.familyName(context.name).lowercased(),
             ]
             return names.contains { wildcardMatch(pattern: value, text: $0) }
         case .bundlePrefix:
             let ids = [
-                process.bundleIdentifier,
-                process.bundleIdentifier.map(ProcessAggregator.familyBundleID),
+                context.bundleIdentifier,
+                context.bundleIdentifier.map(ProcessAggregator.familyBundleID),
             ].compactMap { $0?.lowercased() }
             return ids.contains { $0.hasPrefix(value) }
         case .nameContains:
-            return process.name.lowercased().contains(value)
+            return context.name.lowercased().contains(value)
         case .pathContains:
-            if process.path.lowercased().contains(value) { return true }
-            if let app = ProcessAggregator.appBundlePath(from: process.path, outermost: true) {
+            if context.path.lowercased().contains(value) { return true }
+            if let app = ProcessAggregator.appBundlePath(from: context.path, outermost: true) {
                 return app.lowercased().contains(value)
             }
             return false
         case .user:
-            return process.username.lowercased() == value
+            return context.username.lowercased() == value
+        default:
+            return false
         }
     }
 
@@ -143,17 +232,21 @@ enum ProcessGroupMatcher {
 
     /// 进程可能命中的稳定标识（与 GroupMember.id 对应）
     static func identityKeys(for process: MonitoredProcess) -> Set<String> {
+        identityKeys(for: process.ruleContext)
+    }
+
+    static func identityKeys(for context: ProcessRuleContext) -> Set<String> {
         var keys: Set<String> = []
-        if let app = ProcessAggregator.appBundlePath(from: process.path, outermost: true) {
+        if let app = ProcessAggregator.appBundlePath(from: context.path, outermost: true) {
             keys.insert("app:" + app)
         }
-        if let bid = process.bundleIdentifier, !bid.isEmpty {
+        if let bid = context.bundleIdentifier, !bid.isEmpty {
             keys.insert("bid:" + ProcessAggregator.familyBundleID(bid))
         }
-        if !process.path.isEmpty {
-            keys.insert("path:" + process.path)
+        if !context.path.isEmpty {
+            keys.insert("path:" + context.path)
         }
-        keys.insert("name:" + ProcessAggregator.familyName(process.name))
+        keys.insert("name:" + ProcessAggregator.familyName(context.name))
         return keys
     }
 

@@ -701,73 +701,43 @@ enum ProcessClassifier {
 
     // MARK: - Public API
 
+    /// 分类由规则库中的内置分类规则统一驱动：
+    /// Apple 系统 / Apple 应用 / 第三方 都是可组合的小规则，避免这里再维护一套粗粒度判断。
     static func classify(path: String, name: String, bundleID: String?) -> (ProcessCategory, ProcessKind) {
         let kind = detectKind(path: path, name: name, bundleID: bundleID)
+        let context = ProcessRuleContext(
+            name: name,
+            path: path,
+            bundleIdentifier: bundleID,
+            kind: kind,
+            username: ""
+        )
+        let savedRules = BuiltinRuleCatalog.matchingRulesByID
 
-        if isKernelOrBootstrap(name: name, path: path) {
-            return (.appleSystem, .kernel)
-        }
-
-        if let bid = bundleID, isAppleBundleID(bid) {
-            if isSystemPath(path) || kind == .daemon || kind == .helper {
-                return (.appleSystem, kind)
+        for (id, category) in BuiltinRuleCatalog.categoryRules {
+            guard let condition = BuiltinRuleCatalog.conditionsByID[id] else { continue }
+            if ProcessGroupMatcher.evaluate(
+                condition,
+                context: context,
+                savedRules: savedRules
+            ) {
+                return (category, kind)
             }
-            return (.appleApp, kind)
         }
 
-        if isSystemPath(path) {
-            return (.appleSystem, kind)
-        }
-
-        if isAppleAppPath(path) {
-            return (.appleApp, kind)
-        }
-
-        if knownSystemProcessNames.contains(name) {
-            return (.appleSystem, kind)
-        }
-
-        // 名称前缀 com.apple.*
-        if name.hasPrefix("com.apple.") {
-            return (.appleSystem, kind)
-        }
-
-        if path.isEmpty && name.hasPrefix("kernel") {
-            return (.appleSystem, .kernel)
-        }
-
-        if path.isEmpty {
-            // 无路径时，常见系统短名
-            if knownSystemProcessNames.contains(name) || name.hasPrefix("com.apple") {
-                return (.appleSystem, kind)
-            }
-            return (.unknown, kind)
-        }
-
-        return (.thirdParty, kind)
+        return (.unknown, kind)
     }
 
-    // MARK: - Helpers
+    // MARK: - Built-in rule helpers
 
-    private static func isKernelOrBootstrap(name: String, path: String) -> Bool {
-        name == "kernel_task" || name == "launchd" || pidZeroNames.contains(name)
-    }
-
-    private static let pidZeroNames: Set<String> = ["kernel_task"]
-
-    private static func isAppleBundleID(_ bid: String) -> Bool {
-        bid.hasPrefix("com.apple.") ||
-        bid.hasPrefix("com.apple") ||
-        bid == "com.apple" ||
-        bid.hasPrefix("edu.mit.Kerberos") // 系统集成
-    }
-
-    private static func isSystemPath(_ path: String) -> Bool {
+    /// 是否为系统路径（规则库「系统路径」内置规则）
+    static func isSystemPath(_ path: String) -> Bool {
         guard !path.isEmpty else { return false }
         return systemPathPrefixes.contains { path.hasPrefix($0) }
     }
 
-    private static func isAppleAppPath(_ path: String) -> Bool {
+    /// 是否为 Apple 应用路径（规则库「Apple 应用路径」内置规则）
+    static func isAppleAppPath(_ path: String) -> Bool {
         guard !path.isEmpty else { return false }
         if appleAppPathPrefixes.contains(where: { path.hasPrefix($0) || path == $0 }) {
             return true
@@ -785,6 +755,11 @@ enum ProcessClassifier {
             }
         }
         return false
+    }
+
+    /// 是否为已知系统进程名（规则库「已知系统进程」内置规则）
+    static func isKnownSystemProcess(_ name: String) -> Bool {
+        knownSystemProcessNames.contains(name)
     }
 
     private static func extractAppName(from path: String) -> String? {

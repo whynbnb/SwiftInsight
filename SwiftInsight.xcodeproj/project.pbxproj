@@ -16,6 +16,7 @@
 		3384EFC1607AD6A7EFAD7A41 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC71ACF22310115BAC6B19AA /* SettingsView.swift */; };
 		36D06A30F1B5A33B04BB73A1 /* ProcessTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84F5067E32F8A639C3847E0C /* ProcessTableView.swift */; };
 		37AE65F9948B3FC6CFCD129A /* ProcessGroupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 782E651B9410FE24188C7F64 /* ProcessGroupStore.swift */; };
+		3A20B052FB14C5B6828D8FC7 /* BuiltinRuleCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF68360C6FB231E0E45EE63B /* BuiltinRuleCatalog.swift */; };
 		3BE51E93F92353CACAA1581F /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A83AD4E6ED34ABC2A6492A04 /* ContentView.swift */; };
 		408CBB781AD085557496F602 /* ProcessGroupMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8A230FF8A2BEEEC3B236D03 /* ProcessGroupMatcher.swift */; };
 		418D85A34E1FCAB9CAA57F0D /* PrivilegedMetricsClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33DBE5F92A0B1D7D58D324D0 /* PrivilegedMetricsClient.swift */; };
@@ -91,6 +92,7 @@
 		CC12B4B2251A1EBA5A788A18 /* ProcessGroupModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessGroupModels.swift; sourceTree = "<group>"; };
 		CD907D42EBC669C695C7F3B8 /* HistoryChartsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryChartsView.swift; sourceTree = "<group>"; };
 		D7043061F96ACB3859DF0DBB /* LaunchAtLogin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLogin.swift; sourceTree = "<group>"; };
+		DF68360C6FB231E0E45EE63B /* BuiltinRuleCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuiltinRuleCatalog.swift; sourceTree = "<group>"; };
 		E39B9DEF21CF28D94EFF38A4 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
 		E85304F9E81CF35C5A869C09 /* SwiftInsightApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftInsightApp.swift; sourceTree = "<group>"; };
 		F294920FB9C0E8666D593522 /* ControlKeyMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlKeyMonitor.swift; sourceTree = "<group>"; };
@@ -178,6 +180,7 @@
 			isa = PBXGroup;
 			children = (
 				022B9F013BFF33144B99673F /* AppPreferences.swift */,
+				DF68360C6FB231E0E45EE63B /* BuiltinRuleCatalog.swift */,
 				F294920FB9C0E8666D593522 /* ControlKeyMonitor.swift */,
 				7D92568121F5702A494E93B7 /* HelperInstaller.swift */,
 				D7043061F96ACB3859DF0DBB /* LaunchAtLogin.swift */,
@@ -365,6 +368,7 @@
 				D79CE0EA7A86C7C446E3DA09 /* AppDelegate.swift in Sources */,
 				A5857934D2B1A4D92856A001 /* AppPreferences.swift in Sources */,
 				D7AA7925277573B4BD7EAC21 /* AppSession.swift in Sources */,
+				3A20B052FB14C5B6828D8FC7 /* BuiltinRuleCatalog.swift in Sources */,
 				3BE51E93F92353CACAA1581F /* ContentView.swift in Sources */,
 				1DA6048D5C84ABB2033AE485 /* ControlKeyMonitor.swift in Sources */,
 				EF36AC3C9E4E281E7C05A676 /* GroupViews.swift in Sources */,

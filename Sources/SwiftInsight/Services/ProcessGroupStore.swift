@@ -92,11 +92,16 @@ final class ProcessGroupStore: ObservableObject {
 
     func savedRule(with id: UUID?) -> SavedGroupRule? {
         guard let id else { return nil }
-        return savedRules.first { $0.id == id }
+        return allRules.first { $0.id == id }
+    }
+
+    /// 内置规则 + 用户规则（内置规则只读，不能编辑或删除）
+    var allRules: [SavedGroupRule] {
+        BuiltinRuleCatalog.rules + savedRules
     }
 
     var savedRulesByID: [UUID: SavedGroupRule] {
-        Dictionary(uniqueKeysWithValues: savedRules.map { ($0.id, $0) })
+        Dictionary(uniqueKeysWithValues: allRules.map { ($0.id, $0) })
     }
 
     /// 有多少个分组引用了这条规则
@@ -115,12 +120,14 @@ final class ProcessGroupStore: ObservableObject {
     }
 
     func updateSavedRule(_ rule: SavedGroupRule) {
-        guard let index = savedRules.firstIndex(where: { $0.id == rule.id }) else { return }
+        guard !rule.isBuiltin,
+              let index = savedRules.firstIndex(where: { $0.id == rule.id }) else { return }
         savedRules[index] = normalizedSavedRule(rule)
         persistSavedRules()
     }
 
     func removeSavedRule(id: UUID) {
+        guard !BuiltinRuleCatalog.matchingRulesByID.keys.contains(id) else { return }
         savedRules.removeAll { $0.id == id }
         persistSavedRules()
     }
@@ -134,6 +141,7 @@ final class ProcessGroupStore: ObservableObject {
 
     private func normalizedSavedRule(_ rule: SavedGroupRule) -> SavedGroupRule {
         var copy = rule
+        copy.isBuiltin = false
         let trimmedName = copy.name.trimmingCharacters(in: .whitespacesAndNewlines)
         if copy.isAppSet {
             copy.value = ""

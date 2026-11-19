@@ -8,10 +8,28 @@ enum GroupRuleKind: String, Codable, CaseIterable, Identifiable {
     case namePattern    // 名称通配符
     case bundlePrefix   // Bundle ID 前缀（含同族 helper）
     case nameContains   // 名称包含
+    case nameExact      // 名称精确匹配
     case pathContains   // 路径包含
+    case pathPrefix     // 路径前缀
+    case processKind    // 进程类型
+    case pathEmpty      // 路径为空
+    case appleBundleID  // Apple Bundle ID（内置集合）
+    case systemPath     // 系统路径（内置集合）
+    case appleAppPath   // Apple 应用路径（内置集合）
+    case knownSystemProcess // 已知系统进程名（内置集合）
     case user           // 用户名
 
     var id: String { rawValue }
+
+    /// 是否需要用户填写匹配值（内置集合类规则不需要）
+    var requiresValue: Bool {
+        switch self {
+        case .pathEmpty, .appleBundleID, .systemPath, .appleAppPath, .knownSystemProcess:
+            return false
+        default:
+            return true
+        }
+    }
 
     var title: String {
         switch self {
@@ -19,7 +37,15 @@ enum GroupRuleKind: String, Codable, CaseIterable, Identifiable {
         case .namePattern: return L("group.rule.name_pattern")
         case .bundlePrefix: return L("group.rule.bundle")
         case .nameContains: return L("group.rule.name")
+        case .nameExact: return L("group.rule.name_exact")
         case .pathContains: return L("group.rule.path")
+        case .pathPrefix: return L("group.rule.path_prefix")
+        case .processKind: return L("group.rule.process_kind")
+        case .pathEmpty: return L("group.rule.path_empty")
+        case .appleBundleID: return L("group.rule.apple_bundle")
+        case .systemPath: return L("group.rule.system_path")
+        case .appleAppPath: return L("group.rule.apple_app_path")
+        case .knownSystemProcess: return L("group.rule.known_system_process")
         case .user: return L("group.rule.user")
         }
     }
@@ -30,7 +56,15 @@ enum GroupRuleKind: String, Codable, CaseIterable, Identifiable {
         case .namePattern: return "*Edge*"
         case .bundlePrefix: return "com.microsoft.edgemac"
         case .nameContains: return "Chrome"
+        case .nameExact: return "WindowServer"
         case .pathContains: return "/Applications/"
+        case .pathPrefix: return "/usr/libexec/"
+        case .processKind: return "app"
+        case .pathEmpty: return ""
+        case .appleBundleID: return ""
+        case .systemPath: return ""
+        case .appleAppPath: return ""
+        case .knownSystemProcess: return ""
         case .user: return NSUserName()
         }
     }
@@ -44,8 +78,9 @@ struct GroupRule: Identifiable, Codable, Hashable {
 
 /// 规则库条目的内容类型
 enum SavedRuleContent: String, Codable {
-    case rule    // 单条匹配规则
-    case appSet  // 固定应用集合（来自静态分组）
+    case rule       // 单条匹配规则
+    case appSet     // 固定应用集合（来自静态分组）
+    case condition  // 可组合的条件树（内置分类规则等）
 }
 
 /// 规则库里的命名规则 / 规则集，可被任意分组的条件树引用；修改后所有引用同步生效
@@ -57,12 +92,19 @@ struct SavedGroupRule: Identifiable, Codable, Hashable {
     var value: String = ""
     /// 应用集合的固定成员（content == .appSet 时使用）
     var members: [GroupMember] = []
+    /// 组合条件（content == .condition 时使用）
+    var condition: GroupConditionNode?
+    /// 说明文字（内置规则用）
+    var detail: String = ""
+    /// 内置规则不可编辑 / 删除
+    var isBuiltin: Bool = false
 
     var rule: GroupRule {
         GroupRule(kind: kind, value: value)
     }
 
     var isAppSet: Bool { content == .appSet }
+    var isCondition: Bool { content == .condition }
 
     init(
         id: UUID = UUID(),
@@ -70,7 +112,10 @@ struct SavedGroupRule: Identifiable, Codable, Hashable {
         content: SavedRuleContent = .rule,
         kind: GroupRuleKind = .bundlePattern,
         value: String = "",
-        members: [GroupMember] = []
+        members: [GroupMember] = [],
+        condition: GroupConditionNode? = nil,
+        detail: String = "",
+        isBuiltin: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -78,6 +123,9 @@ struct SavedGroupRule: Identifiable, Codable, Hashable {
         self.kind = kind
         self.value = value
         self.members = members
+        self.condition = condition
+        self.detail = detail
+        self.isBuiltin = isBuiltin
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -87,6 +135,9 @@ struct SavedGroupRule: Identifiable, Codable, Hashable {
         case kind
         case value
         case members
+        case condition
+        case detail
+        case isBuiltin
     }
 
     init(from decoder: Decoder) throws {
@@ -97,6 +148,9 @@ struct SavedGroupRule: Identifiable, Codable, Hashable {
         kind = try container.decodeIfPresent(GroupRuleKind.self, forKey: .kind) ?? .bundlePattern
         value = try container.decodeIfPresent(String.self, forKey: .value) ?? ""
         members = try container.decodeIfPresent([GroupMember].self, forKey: .members) ?? []
+        condition = try container.decodeIfPresent(GroupConditionNode.self, forKey: .condition)
+        detail = try container.decodeIfPresent(String.self, forKey: .detail) ?? ""
+        isBuiltin = try container.decodeIfPresent(Bool.self, forKey: .isBuiltin) ?? false
     }
 }
 
