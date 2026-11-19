@@ -36,7 +36,7 @@ Focus: **Apple vs third-party** resource breakdown, a **stable menu-bar panel**,
 | **Menu bar** | Mini icon + frosted panel; independent top-list mode/count; resident without main window |
 | **Refresh** | Three tracks: **icon** / **panel** / **main** — separate intervals, lower idle cost |
 | **Launch** | Restores last main-window vs menu-bar-only state; no create-then-hide flash |
-| **Prefs** | Tabbed Settings: General · Refresh · Menu Bar · Helper · About |
+| **Prefs** | Tabbed Settings: General · Refresh · **Groups** · Menu Bar · Helper · About |
 
 ---
 
@@ -123,6 +123,7 @@ Focus: **Apple vs third-party** resource breakdown, a **stable menu-bar panel**,
 |-----|----------|
 | **General** | Language (System / 中文 / English) · Theme · Detail panel position · Remember view state · **Launch at Login** (`SMAppService`) |
 | **Refresh** | Main-window interval · notes for Control-pause |
+| **Groups** | Show / hide built-in categories · show / hide custom groups · move up / down · edit |
 | **Menu Bar** | Icon mode · icon interval · panel interval · top-list mode · top count |
 | **Helper** | Status · install / uninstall (admin password) · recheck |
 | **About** | Category rules · purpose · version · bundle ID · MIT |

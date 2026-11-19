@@ -280,6 +280,8 @@ struct ProcessFilterGroup: Identifiable, Codable, Hashable {
     var condition: GroupConditionNode = GroupConditionNode()
     /// 是否把匹配进程的所有后代进程也纳入分组
     var includeChildren: Bool = true
+    /// 是否在侧栏隐藏（仍参与规则引用与统计）
+    var isHidden: Bool = false
 
     static let symbolChoices = [
         "app.badge",
@@ -300,7 +302,8 @@ struct ProcessFilterGroup: Identifiable, Codable, Hashable {
         rules: [GroupRule] = [],
         members: [GroupMember] = [],
         condition: GroupConditionNode? = nil,
-        includeChildren: Bool = true
+        includeChildren: Bool = true,
+        isHidden: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -310,6 +313,7 @@ struct ProcessFilterGroup: Identifiable, Codable, Hashable {
         self.members = members
         self.condition = condition ?? .legacy(rules: rules)
         self.includeChildren = includeChildren
+        self.isHidden = isHidden
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -321,6 +325,7 @@ struct ProcessFilterGroup: Identifiable, Codable, Hashable {
         case members
         case condition
         case includeChildren
+        case isHidden
     }
 
     init(from decoder: Decoder) throws {
@@ -338,6 +343,7 @@ struct ProcessFilterGroup: Identifiable, Codable, Hashable {
         }
         // 旧数据没有该字段：默认包含子进程
         includeChildren = try container.decodeIfPresent(Bool.self, forKey: .includeChildren) ?? true
+        isHidden = try container.decodeIfPresent(Bool.self, forKey: .isHidden) ?? false
     }
 }
 

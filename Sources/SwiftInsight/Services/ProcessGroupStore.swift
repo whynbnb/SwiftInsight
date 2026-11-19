@@ -49,6 +49,17 @@ final class ProcessGroupStore: ObservableObject {
         persist()
     }
 
+    /// 在侧栏顺序中上移 / 下移一个分组
+    func moveGroup(id: UUID, by offset: Int) {
+        guard let index = groups.firstIndex(where: { $0.id == id }) else { return }
+        let target = index + offset
+        guard groups.indices.contains(target), target != index else { return }
+        var copy = groups
+        copy.swapAt(index, target)
+        groups = copy
+        persist()
+    }
+
     func remove(atOffsets offsets: IndexSet) {
         groups.remove(atOffsets: offsets)
         persist()

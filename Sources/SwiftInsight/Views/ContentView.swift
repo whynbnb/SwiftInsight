@@ -13,7 +13,8 @@ struct ContentView: View {
             SidebarView(
                 categoryFilter: monitor.categoryFilter,
                 groupFilterID: monitor.groupFilterID,
-                groups: groupStore.groups,
+                groups: groupStore.groups.filter { !$0.isHidden },
+                hiddenCategories: prefs.hiddenCategoryFilters,
                 groupCounts: monitor.groupCounts,
                 summary: monitor.summary,
                 physicalMemory: monitor.systemMetrics.physicalMemory,
@@ -172,6 +173,7 @@ struct SidebarView: View, Equatable {
     let categoryFilter: ProcessCategory?
     let groupFilterID: UUID?
     let groups: [ProcessFilterGroup]
+    let hiddenCategories: Set<String>
     let groupCounts: [UUID: Int]
     let summary: ResourceSummary
     let physicalMemory: UInt64
@@ -190,6 +192,7 @@ struct SidebarView: View, Equatable {
         lhs.categoryFilter == rhs.categoryFilter
             && lhs.groupFilterID == rhs.groupFilterID
             && lhs.groups == rhs.groups
+            && lhs.hiddenCategories == rhs.hiddenCategories
             && lhs.groupCounts == rhs.groupCounts
             && lhs.summary == rhs.summary
             && lhs.physicalMemory == rhs.physicalMemory
@@ -239,10 +242,17 @@ struct SidebarView: View, Equatable {
 
     // MARK: Fixed sections
 
+    /// 「全部进程」始终显示，其余分类可在设置中隐藏
+    private var visibleCategoryItems: [CategoryFilterItem] {
+        CategoryFilterItem.allCases.filter {
+            $0 == .all || !hiddenCategories.contains($0.rawValue)
+        }
+    }
+
     private var categorySection: some View {
         VStack(alignment: .leading, spacing: 4) {
             sectionTitle(L("sidebar.category"))
-            ForEach(CategoryFilterItem.allCases) { item in
+            ForEach(visibleCategoryItems) { item in
                 categoryRow(item)
             }
         }

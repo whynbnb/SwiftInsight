@@ -4,7 +4,9 @@ struct SettingsView: View {
     @EnvironmentObject private var monitor: ProcessMonitor
     @EnvironmentObject private var menuBar: MenuBarController
     @EnvironmentObject private var prefs: AppPreferences
+    @EnvironmentObject private var groupStore: ProcessGroupStore
 
+    @State private var editingGroup: ProcessFilterGroup?
     @State private var helperBusy = false
     @State private var helperMessage: String?
     @State private var helperMessageIsError = false
@@ -24,6 +26,11 @@ struct SettingsView: View {
                     Label(L("settings.tab.refresh"), systemImage: "arrow.clockwise")
                 }
 
+            groupsTab
+                .tabItem {
+                    Label(L("settings.tab.groups"), systemImage: "square.stack.3d.up")
+                }
+
             menuBarTab
                 .tabItem {
                     Label(L("settings.tab.menubar"), systemImage: "menubar.rectangle")
@@ -39,7 +46,7 @@ struct SettingsView: View {
                     Label(L("settings.tab.about"), systemImage: "info.circle")
                 }
         }
-        .frame(width: 520, height: 420)
+        .frame(width: 560, height: 460)
         .id(prefs.language)
         .onAppear {
             monitor.refreshHelperStatus()
@@ -134,6 +141,138 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    private var groupsTab: some View {
+        List {
+            Section {
+                ForEach([CategoryFilterItem.appleSystem, .appleApp, .thirdParty], id: \.self) { item in
+                    HStack(spacing: 8) {
+                        Image(systemName: item.symbolName)
+                            .frame(width: 18)
+                            .foregroundStyle(.secondary)
+                        Text(item.title)
+                        Spacer()
+                        Toggle("", isOn: categoryVisibilityBinding(item))
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                    }
+                }
+            } header: {
+                Text(L("settings.groups.builtin"))
+            } footer: {
+                Text(L("settings.groups.builtin.caption"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                if groupStore.groups.isEmpty {
+                    Text(L("settings.groups.custom.empty"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(Array(groupStore.groups.enumerated()), id: \.element.id) { index, group in
+                        customGroupRow(group, index: index)
+                    }
+                }
+            } header: {
+                Text(L("settings.groups.custom"))
+            } footer: {
+                Text(L("settings.groups.custom.caption"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .listStyle(.inset)
+        .sheet(item: $editingGroup) { group in
+            GroupEditorSheet(context: .edit(group)) { saved in
+                groupStore.update(saved)
+            }
+        }
+    }
+
+    private func customGroupRow(_ group: ProcessFilterGroup, index: Int) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: group.symbolName)
+                .frame(width: 18)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(group.name)
+                    .lineLimit(1)
+                Text(group.isDynamic ? L("group.kind.dynamic") : L("group.kind.static"))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            Spacer(minLength: 4)
+
+            Button {
+                groupStore.moveGroup(id: group.id, by: -1)
+            } label: {
+                Image(systemName: "chevron.up")
+            }
+            .buttonStyle(.borderless)
+            .disabled(index == 0)
+            .help(L("settings.groups.move_up"))
+
+            Button {
+                groupStore.moveGroup(id: group.id, by: 1)
+            } label: {
+                Image(systemName: "chevron.down")
+            }
+            .buttonStyle(.borderless)
+            .disabled(index >= groupStore.groups.count - 1)
+            .help(L("settings.groups.move_down"))
+
+            Button {
+                editingGroup = group
+            } label: {
+                Image(systemName: "pencil")
+            }
+            .buttonStyle(.borderless)
+            .help(L("group.edit"))
+
+            Toggle("", isOn: groupVisibilityBinding(group))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .help(L("settings.groups.visibility"))
+        }
+        .opacity(group.isHidden ? 0.55 : 1)
+    }
+
+    private func categoryVisibilityBinding(_ item: CategoryFilterItem) -> Binding<Bool> {
+        Binding(
+            get: { !prefs.isCategoryHidden(item) },
+            set: { visible in
+                prefs.setCategoryHidden(item, hidden: !visible)
+                if !visible, CategoryFilterItem.from(category: monitor.categoryFilter) == item {
+                    monitor.selectCategory(nil)
+                }
+            }
+        )
+    }
+
+    private func groupVisibilityBinding(_ group: ProcessFilterGroup) -> Binding<Bool> {
+        Binding(
+            get: {
+                groupStore.groups.first(where: { $0.id == group.id })?.isHidden == false
+            },
+            set: { visible in
+                guard var current = groupStore.groups.first(where: { $0.id == group.id }) else { return }
+                current.isHidden = !visible
+                groupStore.update(current)
+                if !visible, monitor.groupFilterID == group.id {
+                    monitor.selectGroup(nil)
+                }
+                if !visible, editingGroup?.id == group.id {
+                    editingGroup = nil
+                }
+            }
+        )
     }
 
     private var menuBarTab: some View {

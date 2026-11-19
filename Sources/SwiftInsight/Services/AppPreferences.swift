@@ -82,6 +82,7 @@ final class AppPreferences: ObservableObject {
     private static let detailPanelPositionKey = "detailPanelPosition"
     private static let rememberViewStateKey = "rememberViewState"
     private static let rankingTabKey = "rankingTab"
+    private static let hiddenCategoryFiltersKey = "hiddenCategoryFilters"
     private static let menuBarTopCountKey = "menuBarTopCount"
     private static let menuBarDisplayModeKey = "menuBarDisplayMode"
     nonisolated static let menuBarTopCountRange = 3...15
@@ -122,6 +123,13 @@ final class AppPreferences: ObservableObject {
         didSet {
             guard rememberViewState else { return }
             UserDefaults.standard.set(rankingTab.rawValue, forKey: Self.rankingTabKey)
+        }
+    }
+
+    /// 侧栏隐藏的内置分类（rawValue 集合）；「全部进程」始终显示
+    @Published var hiddenCategoryFilters: Set<String> {
+        didSet {
+            UserDefaults.standard.set(Array(hiddenCategoryFilters), forKey: Self.hiddenCategoryFiltersKey)
         }
     }
 
@@ -190,6 +198,10 @@ final class AppPreferences: ObservableObject {
             rankingTab = .thirdCPU
         }
 
+        hiddenCategoryFilters = Set(
+            UserDefaults.standard.stringArray(forKey: Self.hiddenCategoryFiltersKey) ?? []
+        )
+
         let storedTop = UserDefaults.standard.object(forKey: Self.menuBarTopCountKey) as? Int
             ?? Self.menuBarTopCountDefault
         menuBarTopCount = Self.clampedTopCount(storedTop)
@@ -209,6 +221,18 @@ final class AppPreferences: ObservableObject {
         // 静态初始化过早时 NSApp 仍为 nil
         guard NSApp != nil else { return }
         NSApp.appearance = theme.nsAppearance
+    }
+
+    func isCategoryHidden(_ item: CategoryFilterItem) -> Bool {
+        hiddenCategoryFilters.contains(item.rawValue)
+    }
+
+    func setCategoryHidden(_ item: CategoryFilterItem, hidden: Bool) {
+        if hidden {
+            hiddenCategoryFilters.insert(item.rawValue)
+        } else {
+            hiddenCategoryFilters.remove(item.rawValue)
+        }
     }
 }
 
@@ -336,9 +360,18 @@ enum L10n {
         // Settings
         "settings.tab.general": "通用",
         "settings.tab.refresh": "刷新",
+        "settings.tab.groups": "分组",
         "settings.tab.menubar": "菜单栏",
         "settings.tab.helper": "特权",
         "settings.tab.about": "关于",
+        "settings.groups.builtin": "内置分类",
+        "settings.groups.builtin.caption": "隐藏不常用的分类；「全部进程」始终显示。",
+        "settings.groups.custom": "自定义分组",
+        "settings.groups.custom.caption": "隐藏分组或调整它们在侧栏中的顺序。",
+        "settings.groups.custom.empty": "还没有自定义分组。",
+        "settings.groups.move_up": "上移",
+        "settings.groups.move_down": "下移",
+        "settings.groups.visibility": "在侧栏显示",
         "settings.refresh": "刷新",
         "settings.refresh_interval": "主窗口间隔",
         "settings.refresh.main.caption": "仅主窗口打开时生效：完整进程列表、图表与详情。关闭主窗口后自动停用。",
@@ -716,9 +749,18 @@ enum L10n {
 
         "settings.tab.general": "General",
         "settings.tab.refresh": "Refresh",
+        "settings.tab.groups": "Groups",
         "settings.tab.menubar": "Menu Bar",
         "settings.tab.helper": "Helper",
         "settings.tab.about": "About",
+        "settings.groups.builtin": "Built-in Categories",
+        "settings.groups.builtin.caption": "Hide categories you don't need; “All Processes” always stays visible.",
+        "settings.groups.custom": "Custom Groups",
+        "settings.groups.custom.caption": "Hide groups or reorder them in the sidebar.",
+        "settings.groups.custom.empty": "No custom groups yet.",
+        "settings.groups.move_up": "Move Up",
+        "settings.groups.move_down": "Move Down",
+        "settings.groups.visibility": "Show in sidebar",
         "settings.refresh": "Refresh",
         "settings.refresh_interval": "Main window interval",
         "settings.refresh.main.caption": "Applies only while the main window is open: full process list, charts, and details. Stops when the window is closed.",

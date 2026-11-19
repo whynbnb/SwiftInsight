@@ -212,7 +212,9 @@ final class ProcessMonitor: ObservableObject {
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] groups in
                     guard let self else { return }
-                    if let id = self.groupFilterID, !groups.contains(where: { $0.id == id }) {
+                    // 分组被删除或被隐藏时，退出分组筛选
+                    if let id = self.groupFilterID,
+                       groups.first(where: { $0.id == id })?.isHidden != false {
                         self.groupFilterID = nil
                     }
                     self.recomputeGroupCounts()
