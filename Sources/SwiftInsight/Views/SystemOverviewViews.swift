@@ -520,6 +520,68 @@ struct CategoryRankingsView: View {
     }
 }
 
+// MARK: - Wrap layout
+
+/// 从左到右排列，宽度不够时自动换行（用于打开文件等标签流）
+private struct WrapLayout: Layout {
+    var spacing: CGFloat = 6
+    var lineSpacing: CGFloat = 6
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var widest: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > maxWidth {
+                x = 0
+                y += rowHeight + lineSpacing
+                rowHeight = 0
+            }
+            widest = max(widest, x + size.width)
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+
+        let width = maxWidth.isFinite ? min(widest, maxWidth) : widest
+        return CGSize(width: width, height: y + rowHeight)
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) {
+        var x = bounds.minX
+        var y = bounds.minY
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > bounds.minX, x + size.width > bounds.maxX {
+                x = bounds.minX
+                y += rowHeight + lineSpacing
+                rowHeight = 0
+            }
+            subview.place(
+                at: CGPoint(x: x, y: y),
+                anchor: .topLeading,
+                proposal: ProposedViewSize(size)
+            )
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+    }
+}
+
 // MARK: - Enhanced process detail panel
 
 struct ProcessDetailPanel: View {
@@ -577,18 +639,19 @@ struct ProcessDetailPanel: View {
                 }
 
                 if !detail.openFiles.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(detail.openFiles.prefix(12)) { file in
-                                Text("\(file.kind): \(shortPath(file.path))")
-                                    .font(.caption2)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 3)
-                                    .background(Color.secondary.opacity(0.1), in: Capsule())
-                                    .help(file.path)
-                            }
+                    // 换行布局：放不下的文件标签自动折到下一行，避免被横向裁掉
+                    WrapLayout(spacing: 6, lineSpacing: 6) {
+                        ForEach(detail.openFiles.prefix(12)) { file in
+                            Text("\(file.kind): \(shortPath(file.path))")
+                                .font(.caption2)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color.secondary.opacity(0.1), in: Capsule())
+                                .help(file.path)
+                                .fixedSize()
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .padding(.horizontal, 16)
