@@ -494,6 +494,7 @@ struct SummaryBarView: View {
         let savedRules = groupStore.savedRulesByID
         let pids = ProcessGroupMatcher.matchedProcessIDs(
             group: group,
+            groups: groupStore.groups,
             processes: monitor.processes,
             savedRules: savedRules
         )

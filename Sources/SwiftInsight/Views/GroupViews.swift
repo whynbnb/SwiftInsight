@@ -210,7 +210,7 @@ struct GroupEditorSheet: View {
         case .edit(let group):
             var group = group
             // 根节点必须是条件组，旧数据或异常数据统一包一层
-            if group.condition.isRule {
+            if group.condition.isRule || group.condition.isGroupReference {
                 group.condition = GroupConditionNode(children: [group.condition])
             }
             _draft = State(initialValue: group)
@@ -369,6 +369,8 @@ struct GroupEditorView: View {
                     isRoot: true,
                     onRemove: nil,
                     savedRules: groupStore.allRules,
+                    groups: groupStore.groups,
+                    currentGroupID: draft.id,
                     onOpenLibrary: { sheetRoute = .ruleLibrary },
                     onSaveRule: { sheetRoute = .saveRule($0) }
                 )
@@ -484,13 +486,17 @@ private struct GroupConditionEditor: View {
     let isRoot: Bool
     let onRemove: (() -> Void)?
     let savedRules: [SavedGroupRule]
+    let groups: [ProcessFilterGroup]
+    let currentGroupID: UUID
     let onOpenLibrary: () -> Void
     let onSaveRule: (GroupRule) -> Void
 
     private static let maxDepth = 4
 
     var body: some View {
-        if node.isReference {
+        if node.isGroupReference {
+            groupReferenceRow
+        } else if node.isReference {
             referenceRow
         } else if node.isRule {
             ruleRow
@@ -711,6 +717,92 @@ private struct GroupConditionEditor: View {
         }
     }
 
+    // MARK: Group reference
+
+    private var currentGroup: ProcessFilterGroup? {
+        guard let ref = node.groupRef else { return nil }
+        return groups.first { $0.id == ref }
+    }
+
+    /// 可引用的分组：排除自身，以及（直接或间接）引用当前分组的分组，避免循环
+    private var referenceCandidates: [ProcessFilterGroup] {
+        groups.filter { candidate in
+            candidate.id != currentGroupID && !dependsOnCurrent(candidate, visiting: [])
+        }
+    }
+
+    private func dependsOnCurrent(_ group: ProcessFilterGroup, visiting: Set<UUID>) -> Bool {
+        if group.id == currentGroupID { return true }
+        guard !visiting.contains(group.id) else { return false }
+        var next = visiting
+        next.insert(group.id)
+        for ref in group.condition.referencedGroupIDs {
+            guard let referenced = groups.first(where: { $0.id == ref }) else { continue }
+            if dependsOnCurrent(referenced, visiting: next) { return true }
+        }
+        return false
+    }
+
+    private var groupReferenceRow: some View {
+        HStack(spacing: 6) {
+            negateButton
+
+            Menu {
+                if referenceCandidates.isEmpty {
+                    Button(L("group.ref.empty")) {}
+                        .disabled(true)
+                } else {
+                    ForEach(referenceCandidates) { target in
+                        Button {
+                            node.groupRef = target.id
+                        } label: {
+                            if target.id == node.groupRef {
+                                Label(target.name, systemImage: "checkmark")
+                            } else {
+                                Label(target.name, systemImage: target.symbolName)
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Label(
+                    currentGroup?.name ?? L("group.ref.missing"),
+                    systemImage: currentGroup == nil
+                        ? "exclamationmark.triangle"
+                        : (currentGroup?.symbolName ?? "square.stack.3d.up")
+                )
+                .font(.caption)
+                .lineLimit(1)
+                .foregroundStyle(currentGroup == nil ? Color.red : Color.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .frame(width: 210)
+
+            if currentGroup != nil {
+                Text(L("group.ref.sync"))
+                    .font(.caption2)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Color.accentColor.opacity(0.12), in: Capsule())
+                    .foregroundStyle(Color.accentColor)
+                    .help(L("group.ref.sync.help"))
+            } else {
+                Text(L("group.ref.missing.help"))
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 0)
+
+            if !isRoot, let onRemove {
+                removeButton(help: L("group.remove"), action: onRemove)
+            }
+        }
+    }
+
     // MARK: Nested condition group
 
     private var groupBox: some View {
@@ -749,6 +841,8 @@ private struct GroupConditionEditor: View {
                         isRoot: false,
                         onRemove: { node.children.removeAll { $0.id == child.id } },
                         savedRules: savedRules,
+                        groups: groups,
+                        currentGroupID: currentGroupID,
                         onOpenLibrary: onOpenLibrary,
                         onSaveRule: onSaveRule
                     )
@@ -770,6 +864,25 @@ private struct GroupConditionEditor: View {
                     Button(L("group.rule.manage_library")) { onOpenLibrary() }
                 } label: {
                     Label(L("group.rule.reference"), systemImage: "bookmark")
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+
+                Menu {
+                    if referenceCandidates.isEmpty {
+                        Button(L("group.ref.empty")) {}
+                            .disabled(true)
+                    } else {
+                        ForEach(referenceCandidates) { target in
+                            Button {
+                                node.children.append(GroupConditionNode(groupRef: target.id))
+                            } label: {
+                                Label(target.name, systemImage: target.symbolName)
+                            }
+                        }
+                    }
+                } label: {
+                    Label(L("group.condition.reference_group"), systemImage: "square.stack.3d.up")
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()

@@ -176,6 +176,8 @@ struct GroupConditionNode: Identifiable, Codable, Hashable {
     var rule: GroupRule?
     /// 引用规则库中的命名规则（与 rule 互斥）
     var ruleRef: UUID?
+    /// 引用另一个自定义分组（实时同步该分组的成员）
+    var groupRef: UUID?
     /// 条件组内子条件的组合方式
     var combinator: GroupCombinator = .any
     /// 是否对自身结果取反
@@ -185,17 +187,27 @@ struct GroupConditionNode: Identifiable, Codable, Hashable {
 
     var isRule: Bool { rule != nil || ruleRef != nil }
     var isReference: Bool { ruleRef != nil }
+    var isGroupReference: Bool { groupRef != nil }
 
     init(id: UUID = UUID(), rule: GroupRule) {
         self.id = id
         self.rule = rule
         self.ruleRef = nil
+        self.groupRef = nil
     }
 
     init(id: UUID = UUID(), ruleRef: UUID) {
         self.id = id
         self.rule = nil
         self.ruleRef = ruleRef
+        self.groupRef = nil
+    }
+
+    init(id: UUID = UUID(), groupRef: UUID) {
+        self.id = id
+        self.rule = nil
+        self.ruleRef = nil
+        self.groupRef = groupRef
     }
 
     init(
@@ -207,6 +219,7 @@ struct GroupConditionNode: Identifiable, Codable, Hashable {
         self.id = id
         self.rule = nil
         self.ruleRef = nil
+        self.groupRef = nil
         self.combinator = combinator
         self.isNegated = isNegated
         self.children = children
@@ -224,6 +237,16 @@ struct GroupConditionNode: Identifiable, Codable, Hashable {
         if let ruleRef { ids.insert(ruleRef) }
         for child in children {
             ids.formUnion(child.referencedRuleIDs)
+        }
+        return ids
+    }
+
+    /// 树中所有引用的自定义分组 ID
+    var referencedGroupIDs: Set<UUID> {
+        var ids: Set<UUID> = []
+        if let groupRef { ids.insert(groupRef) }
+        for child in children {
+            ids.formUnion(child.referencedGroupIDs)
         }
         return ids
     }

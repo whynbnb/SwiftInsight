@@ -257,15 +257,15 @@ final class ProcessMonitor: ObservableObject {
             return
         }
         let savedRules = ProcessGroupStore.shared.savedRulesByID
+        let memberships = ProcessGroupMatcher.groupMemberships(
+            groups: groups,
+            processes: processes,
+            savedRules: savedRules
+        )
         var counts: [UUID: Int] = [:]
         counts.reserveCapacity(groups.count)
         for group in groups {
-            let pids = ProcessGroupMatcher.matchedProcessIDs(
-                group: group,
-                processes: processes,
-                savedRules: savedRules
-            )
-            counts[group.id] = pids.count
+            counts[group.id] = memberships[group.id]?.count ?? 0
         }
         if counts != groupCounts { groupCounts = counts }
     }
@@ -549,6 +549,7 @@ final class ProcessMonitor: ObservableObject {
             let savedRules = ProcessGroupStore.shared.savedRulesByID
             let pids = ProcessGroupMatcher.matchedProcessIDs(
                 group: group,
+                groups: ProcessGroupStore.shared.groups,
                 processes: processes,
                 savedRules: savedRules
             )

@@ -711,6 +711,7 @@ enum ProcessClassifier {
     static func classify(path: String, name: String, bundleID: String?) -> (ProcessCategory, ProcessKind) {
         let kind = detectKind(path: path, name: name, bundleID: bundleID)
         let context = ProcessRuleContext(
+            pid: 0,
             name: name,
             path: path,
             bundleIdentifier: bundleID,

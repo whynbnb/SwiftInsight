@@ -2,6 +2,7 @@ import Foundation
 
 /// 规则求值所需的进程信息（分类器在生成 ProcessKind 后也能直接复用）
 struct ProcessRuleContext {
+    let pid: Int32
     let name: String
     let path: String
     let bundleIdentifier: String?
@@ -12,6 +13,7 @@ struct ProcessRuleContext {
 extension MonitoredProcess {
     var ruleContext: ProcessRuleContext {
         ProcessRuleContext(
+            pid: pid,
             name: name,
             path: path,
             bundleIdentifier: bundleIdentifier,
@@ -29,62 +31,121 @@ enum ProcessGroupMatcher {
     static func matches(
         _ process: MonitoredProcess,
         group: ProcessFilterGroup,
-        savedRules: [UUID: SavedGroupRule] = [:]
+        savedRules: [UUID: SavedGroupRule] = [:],
+        groupMembership: ((UUID) -> Set<Int32>)? = nil
     ) -> Bool {
         if group.isDynamic {
-            return evaluate(group.condition, context: process.ruleContext, savedRules: savedRules)
+            return evaluate(
+                group.condition,
+                context: process.ruleContext,
+                savedRules: savedRules,
+                groupMembership: groupMembership
+            )
         }
         guard !group.members.isEmpty else { return false }
         let keys = identityKeys(for: process.ruleContext)
         return group.members.contains { keys.contains($0.id) }
     }
 
-    /// 分组命中的进程 PID：直接匹配的进程，并可选择展开所有后代进程
-    static func matchedProcessIDs(
-        group: ProcessFilterGroup,
+    /// 计算所有分组的成员 PID（含分组引用与后代展开）。
+    /// 分组引用按 ID 实时解析；visiting 用于阻断分组之间的循环引用。
+    static func groupMemberships(
+        groups: [ProcessFilterGroup],
         processes: [MonitoredProcess],
         savedRules: [UUID: SavedGroupRule] = [:]
-    ) -> Set<Int32> {
-        var matched: Set<Int32> = []
-        for process in processes where matches(process, group: group, savedRules: savedRules) {
-            matched.insert(process.pid)
-        }
-        guard group.includeChildren, !matched.isEmpty else { return matched }
+    ) -> [UUID: Set<Int32>] {
+        let groupsByID = Dictionary(uniqueKeysWithValues: groups.map { ($0.id, $0) })
+        var memberships: [UUID: Set<Int32>] = [:]
+        var visiting: Set<UUID> = []
 
         var childrenByParent: [Int32: [Int32]] = [:]
         for process in processes where process.ppid > 0 {
             childrenByParent[process.ppid, default: []].append(process.pid)
         }
 
-        var queue = Array(matched)
-        var index = 0
-        while index < queue.count {
-            let pid = queue[index]
-            index += 1
-            for child in childrenByParent[pid] ?? [] where matched.insert(child).inserted {
-                queue.append(child)
+        func expand(_ direct: Set<Int32>, includeChildren: Bool) -> Set<Int32> {
+            guard includeChildren, !direct.isEmpty else { return direct }
+            var matched = direct
+            var queue = Array(direct)
+            var index = 0
+            while index < queue.count {
+                let pid = queue[index]
+                index += 1
+                for child in childrenByParent[pid] ?? [] where matched.insert(child).inserted {
+                    queue.append(child)
+                }
             }
+            return matched
         }
-        return matched
+
+        func membership(_ id: UUID) -> Set<Int32> {
+            if let cached = memberships[id] { return cached }
+            guard let group = groupsByID[id], visiting.insert(id).inserted else { return [] }
+
+            var direct: Set<Int32> = []
+            for process in processes where matches(
+                process,
+                group: group,
+                savedRules: savedRules,
+                groupMembership: membership
+            ) {
+                direct.insert(process.pid)
+            }
+
+            visiting.remove(id)
+            let result = expand(direct, includeChildren: group.includeChildren)
+            memberships[id] = result
+            return result
+        }
+
+        for group in groups {
+            _ = membership(group.id)
+        }
+        return memberships
+    }
+
+    /// 分组命中的进程 PID（含后代展开与分组引用）
+    static func matchedProcessIDs(
+        group: ProcessFilterGroup,
+        groups: [ProcessFilterGroup],
+        processes: [MonitoredProcess],
+        savedRules: [UUID: SavedGroupRule] = [:]
+    ) -> Set<Int32> {
+        groupMemberships(
+            groups: groups,
+            processes: processes,
+            savedRules: savedRules
+        )[group.id] ?? []
     }
 
     static func evaluate(
         _ node: GroupConditionNode,
         process: MonitoredProcess,
-        savedRules: [UUID: SavedGroupRule] = [:]
+        savedRules: [UUID: SavedGroupRule] = [:],
+        groupMembership: ((UUID) -> Set<Int32>)? = nil
     ) -> Bool {
-        evaluate(node, context: process.ruleContext, savedRules: savedRules)
+        evaluate(
+            node,
+            context: process.ruleContext,
+            savedRules: savedRules,
+            groupMembership: groupMembership
+        )
     }
 
     /// 递归求值：规则叶子按取反处理，条件组按 或/且 组合后再取反。
-    /// 规则库引用按当前保存的规则实时求值；引用失效、空白规则、空条件组视为无效条件，
+    /// 规则库 / 自定义分组引用均实时求值；引用失效、空白规则、空条件组视为无效条件，
     /// 整棵树没有有效条件时不匹配任何进程。visiting 用于阻断规则集之间的循环引用。
     static func evaluate(
         _ node: GroupConditionNode,
         context: ProcessRuleContext,
         savedRules: [UUID: SavedGroupRule] = [:],
+        groupMembership: ((UUID) -> Set<Int32>)? = nil,
         visiting: Set<UUID> = []
     ) -> Bool {
+        if let ref = node.groupRef {
+            let matched = groupMembership?(ref).contains(context.pid) ?? false
+            return node.isNegated ? !matched : matched
+        }
         if let ref = node.ruleRef {
             guard let saved = savedRules[ref], !visiting.contains(ref) else { return false }
             let matched: Bool
@@ -100,6 +161,7 @@ enum ProcessGroupMatcher {
                     condition,
                     context: context,
                     savedRules: savedRules,
+                    groupMembership: groupMembership,
                     visiting: visiting.union([ref])
                 )
             }
@@ -115,11 +177,23 @@ enum ProcessGroupMatcher {
         switch node.combinator {
         case .any:
             combined = children.contains {
-                evaluate($0, context: context, savedRules: savedRules, visiting: visiting)
+                evaluate(
+                    $0,
+                    context: context,
+                    savedRules: savedRules,
+                    groupMembership: groupMembership,
+                    visiting: visiting
+                )
             }
         case .all:
             combined = children.allSatisfy {
-                evaluate($0, context: context, savedRules: savedRules, visiting: visiting)
+                evaluate(
+                    $0,
+                    context: context,
+                    savedRules: savedRules,
+                    groupMembership: groupMembership,
+                    visiting: visiting
+                )
             }
         }
         return node.isNegated ? !combined : combined
@@ -130,6 +204,8 @@ enum ProcessGroupMatcher {
         _ node: GroupConditionNode,
         savedRules: [UUID: SavedGroupRule]
     ) -> Bool {
+        // 分组引用是明确条件；即使引用失效也保留其位置
+        if node.groupRef != nil { return false }
         if let ref = node.ruleRef {
             guard let saved = savedRules[ref] else { return true }
             switch saved.content {
