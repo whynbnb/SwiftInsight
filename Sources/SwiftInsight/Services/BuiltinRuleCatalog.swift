@@ -195,22 +195,23 @@ enum BuiltinRuleCatalog {
         ])
     }
 
-    private static var daemonOrHelperCondition: GroupConditionNode {
-        any([
-            rule(.processKind, ProcessKind.daemon.rawValue),
-            rule(.processKind, ProcessKind.helper.rawValue),
-        ])
-    }
-
     private static var appleSystemCondition: GroupConditionNode {
         any([
             // 已知系统进程名只用于「拿不到路径」的兜底，避免把 /usr/bin 里的
             // osascript、ssh-agent、zsh 等用户命令误判为系统进程。
             all([rule(.pathEmpty), rule(.knownSystemProcess)]),
-            all([ref(BuiltinRuleID.appleBundle), rule(.systemPath)]),
-            all([ref(BuiltinRuleID.appleBundle), daemonOrHelperCondition]),
+            // Apple 守护进程仍算系统；helper 不再一律算系统，
+            // Xcode.app 里的 SourceKitService / lldb-rpc-server 等应归入 Apple 应用。
+            all([
+                ref(BuiltinRuleID.appleBundle),
+                rule(.processKind, ProcessKind.daemon.rawValue),
+            ]),
             rule(.systemPath),
-            rule(.namePattern, "com.apple.*"),
+            // 没有 Apple Bundle 的 com.apple.* XPC 服务（如 WebKit 子进程）
+            all([
+                not(ref(BuiltinRuleID.appleBundle)),
+                rule(.namePattern, "com.apple.*"),
+            ]),
             all([rule(.pathEmpty), rule(.namePattern, "kernel*")]),
             all([rule(.pathEmpty), rule(.namePattern, "com.apple*")]),
         ])
@@ -222,11 +223,7 @@ enum BuiltinRuleCatalog {
         all([
             not(ref(BuiltinRuleID.appleSystem)),
             any([
-                all([
-                    ref(BuiltinRuleID.appleBundle),
-                    not(rule(.systemPath)),
-                    not(daemonOrHelperCondition),
-                ]),
+                ref(BuiltinRuleID.appleBundle),
                 rule(.appleAppPath),
             ]),
         ])
