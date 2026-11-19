@@ -93,7 +93,22 @@ enum ProcessGroupMatcher {
             }
 
             visiting.remove(id)
+
+            // 取反条件视为硬排除：即使目标进程因父进程命中而被展开，也不能重新计入
+            var excluded: Set<Int32> = []
+            if group.isDynamic {
+                for process in processes where isExplicitlyExcluded(
+                    group.condition,
+                    context: process.ruleContext,
+                    savedRules: savedRules,
+                    groupMembership: membership
+                ) {
+                    excluded.insert(process.pid)
+                }
+            }
+
             let result = expand(direct, includeChildren: group.includeChildren)
+                .subtracting(excluded)
             memberships[id] = result
             return result
         }
@@ -197,6 +212,37 @@ enum ProcessGroupMatcher {
             }
         }
         return node.isNegated ? !combined : combined
+    }
+
+    /// 命中「非」条件的进程：作为硬排除，优先级高于 includeChildren 的后代展开。
+    /// 只收集最外层取反节点，取反节点内部的嵌套条件仍按布尔求值处理。
+    private static func isExplicitlyExcluded(
+        _ node: GroupConditionNode,
+        context: ProcessRuleContext,
+        savedRules: [UUID: SavedGroupRule],
+        groupMembership: ((UUID) -> Set<Int32>)?
+    ) -> Bool {
+        if node.isNegated {
+            var positive = node
+            positive.isNegated = false
+            return evaluate(
+                positive,
+                context: context,
+                savedRules: savedRules,
+                groupMembership: groupMembership
+            )
+        }
+        for child in node.children {
+            if isExplicitlyExcluded(
+                child,
+                context: context,
+                savedRules: savedRules,
+                groupMembership: groupMembership
+            ) {
+                return true
+            }
+        }
+        return false
     }
 
     /// 没有任何有效规则的条件（空白规则 / 失效引用 / 空条件组）
