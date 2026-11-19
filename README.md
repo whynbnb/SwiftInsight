@@ -56,6 +56,7 @@ Focus: **Apple vs third-party** resource breakdown, a **stable menu-bar panel**,
 - **Rule library**: save reusable named rules and insert them with **Reference Rule**; a **static group** can be saved as a rule set (fixed app list) and referenced anywhere; edits apply to every reference instantly
 - **Built-in rules**: Apple System / Apple Apps / Third Party are decomposed into composable primitives (system paths, Apple Bundle ID, Apple app paths, known system processes, process kind, foreground/background); the sidebar categories and custom references share the same logic
 - **Static** groups hold a fixed app list you curate
+- Groups can **include child processes** (on by default): all descendants of matched processes (children, grandchildren, …) count as group members
 - Add apps from the global view: right-click a row → **Add to Group**, or **New Group with This Process** to create a group from that app
 - The group editor searches all running apps, so membership can be changed at any time
 - The active group shows as a removable chip in the table header; category and group filters are mutually exclusive

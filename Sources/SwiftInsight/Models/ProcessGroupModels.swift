@@ -255,6 +255,8 @@ struct ProcessFilterGroup: Identifiable, Codable, Hashable {
     var members: [GroupMember] = []
     /// 动态分组的条件树（根节点为条件组）
     var condition: GroupConditionNode = GroupConditionNode()
+    /// 是否把匹配进程的所有后代进程也纳入分组
+    var includeChildren: Bool = true
 
     static let symbolChoices = [
         "app.badge",
@@ -274,7 +276,8 @@ struct ProcessFilterGroup: Identifiable, Codable, Hashable {
         isDynamic: Bool,
         rules: [GroupRule] = [],
         members: [GroupMember] = [],
-        condition: GroupConditionNode? = nil
+        condition: GroupConditionNode? = nil,
+        includeChildren: Bool = true
     ) {
         self.id = id
         self.name = name
@@ -283,6 +286,7 @@ struct ProcessFilterGroup: Identifiable, Codable, Hashable {
         self.rules = rules
         self.members = members
         self.condition = condition ?? .legacy(rules: rules)
+        self.includeChildren = includeChildren
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -293,6 +297,7 @@ struct ProcessFilterGroup: Identifiable, Codable, Hashable {
         case rules
         case members
         case condition
+        case includeChildren
     }
 
     init(from decoder: Decoder) throws {
@@ -308,6 +313,8 @@ struct ProcessFilterGroup: Identifiable, Codable, Hashable {
         } else {
             condition = .legacy(rules: rules)
         }
+        // 旧数据没有该字段：默认包含子进程
+        includeChildren = try container.decodeIfPresent(Bool.self, forKey: .includeChildren) ?? true
     }
 }
 

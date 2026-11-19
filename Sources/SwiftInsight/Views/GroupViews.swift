@@ -279,6 +279,18 @@ struct GroupEditorView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
+            HStack(spacing: 8) {
+                Toggle(L("group.include_children"), isOn: $draft.includeChildren)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .fixedSize()
+                Text(L("group.include_children.help"))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+
             Divider()
 
             if draft.isDynamic {

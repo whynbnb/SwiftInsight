@@ -492,11 +492,15 @@ struct SummaryBarView: View {
     private var selectedGroupUsage: GroupUsage? {
         guard let group = groupStore.group(with: monitor.groupFilterID) else { return nil }
         let savedRules = groupStore.savedRulesByID
+        let pids = ProcessGroupMatcher.matchedProcessIDs(
+            group: group,
+            processes: monitor.processes,
+            savedRules: savedRules
+        )
         var cpu = 0.0
         var memory: UInt64 = 0
         var count = 0
-        for process in monitor.processes
-        where ProcessGroupMatcher.matches(process, group: group, savedRules: savedRules) {
+        for process in monitor.processes where pids.contains(process.pid) {
             count += 1
             if process.cpuAvailable { cpu += process.cpuPercent }
             if process.memoryAvailable { memory += process.memoryBytes }

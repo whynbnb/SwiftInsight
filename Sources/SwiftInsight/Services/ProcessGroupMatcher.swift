@@ -39,6 +39,35 @@ enum ProcessGroupMatcher {
         return group.members.contains { keys.contains($0.id) }
     }
 
+    /// 分组命中的进程 PID：直接匹配的进程，并可选择展开所有后代进程
+    static func matchedProcessIDs(
+        group: ProcessFilterGroup,
+        processes: [MonitoredProcess],
+        savedRules: [UUID: SavedGroupRule] = [:]
+    ) -> Set<Int32> {
+        var matched: Set<Int32> = []
+        for process in processes where matches(process, group: group, savedRules: savedRules) {
+            matched.insert(process.pid)
+        }
+        guard group.includeChildren, !matched.isEmpty else { return matched }
+
+        var childrenByParent: [Int32: [Int32]] = [:]
+        for process in processes where process.ppid > 0 {
+            childrenByParent[process.ppid, default: []].append(process.pid)
+        }
+
+        var queue = Array(matched)
+        var index = 0
+        while index < queue.count {
+            let pid = queue[index]
+            index += 1
+            for child in childrenByParent[pid] ?? [] where matched.insert(child).inserted {
+                queue.append(child)
+            }
+        }
+        return matched
+    }
+
     static func evaluate(
         _ node: GroupConditionNode,
         process: MonitoredProcess,

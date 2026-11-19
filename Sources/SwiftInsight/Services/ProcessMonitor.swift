@@ -260,11 +260,12 @@ final class ProcessMonitor: ObservableObject {
         var counts: [UUID: Int] = [:]
         counts.reserveCapacity(groups.count)
         for group in groups {
-            var count = 0
-            for p in processes where ProcessGroupMatcher.matches(p, group: group, savedRules: savedRules) {
-                count += 1
-            }
-            counts[group.id] = count
+            let pids = ProcessGroupMatcher.matchedProcessIDs(
+                group: group,
+                processes: processes,
+                savedRules: savedRules
+            )
+            counts[group.id] = pids.count
         }
         if counts != groupCounts { groupCounts = counts }
     }
@@ -546,9 +547,12 @@ final class ProcessMonitor: ObservableObject {
         // 自定义分组：在分类/范围/搜索之上再筛一层
         if let group = ProcessGroupStore.shared.group(with: groupFilterID) {
             let savedRules = ProcessGroupStore.shared.savedRulesByID
-            filtered = filtered.filter {
-                ProcessGroupMatcher.matches($0, group: group, savedRules: savedRules)
-            }
+            let pids = ProcessGroupMatcher.matchedProcessIDs(
+                group: group,
+                processes: processes,
+                savedRules: savedRules
+            )
+            filtered = filtered.filter { pids.contains($0.pid) }
         }
 
         let rows: [ProcessDisplayRow]
