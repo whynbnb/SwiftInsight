@@ -16,6 +16,7 @@ struct ProcessTableView: View {
                 sortColumn: monitor.sortColumn,
                 sortAscending: monitor.sortAscending,
                 groups: groupStore.groups,
+                isProcessAlive: { pid in monitor.processes.contains { $0.pid == pid } },
                 onSort: { monitor.toggleSort($0) },
                 onTerminate: { pid, force in
                     monitor.terminate(pid: pid, force: force)
@@ -156,6 +157,8 @@ private struct ProcessNSTable: NSViewRepresentable {
     let sortColumn: SortColumn
     let sortAscending: Bool
     let groups: [ProcessFilterGroup]
+    /// 判断选中 PID 是否仍在进程快照中（区别于「被筛选/折叠隐藏」）
+    let isProcessAlive: (Int32) -> Bool
     var onSort: (SortColumn) -> Void
     var onTerminate: (Int32, Bool) -> Void
     var onFilterCategory: (ProcessCategory) -> Void
@@ -312,6 +315,16 @@ private struct ProcessNSTable: NSViewRepresentable {
                     table.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
                 } else if savedSelection == nil {
                     table.deselectAll(nil)
+                } else {
+                    // 选中进程被筛选 / 折叠隐藏时只清除表格高亮，详情面板保留；
+                    // 只有进程确实退出才清空 selectedPID。
+                    table.deselectAll(nil)
+                    if let pid = savedSelection, !self.parent.isProcessAlive(pid) {
+                        DispatchQueue.main.async { [weak self] in
+                            guard let self, self.parent.selectedPID == pid else { return }
+                            self.parent.selectedPID = nil
+                        }
+                    }
                 }
 
                 if let clip, let savedOrigin {
@@ -638,6 +651,9 @@ private struct ProcessNSTable: NSViewRepresentable {
                     || x.memberCount != y.memberCount
                     || x.process.pid != y.process.pid
                     || x.process.name != y.process.name
+                    || x.process.path != y.process.path
+                    || x.process.bundleIdentifier != y.process.bundleIdentifier
+                    || x.process.kind != y.process.kind
                     || abs(x.process.cpuPercent - y.process.cpuPercent) > 0.05
                     || x.process.memoryBytes != y.process.memoryBytes
                     || x.process.cpuAvailable != y.process.cpuAvailable

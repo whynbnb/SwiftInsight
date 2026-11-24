@@ -7,6 +7,8 @@ struct ContentView: View {
     @State private var selectedPID: Int32?
     @State private var showTerminateConfirm = false
     @State private var terminateForce = false
+    /// 弹确认框时的进程身份：防止确认期间 PID 被复用后误杀新进程
+    @State private var pendingTerminate: MonitoredProcess?
 
     var body: some View {
         NavigationSplitView {
@@ -82,17 +84,23 @@ struct ContentView: View {
             terminateForce ? L("alert.force_quit") : L("alert.quit"),
             isPresented: $showTerminateConfirm
         ) {
-            Button(L("alert.cancel"), role: .cancel) {}
+            Button(L("alert.cancel"), role: .cancel) {
+                pendingTerminate = nil
+            }
             Button(terminateForce ? L("alert.force_quit_btn") : L("alert.quit_btn"), role: .destructive) {
-                if let pid = selectedPID {
-                    monitor.terminate(pid: pid, force: terminateForce)
-                    selectedPID = nil
+                if let target = pendingTerminate,
+                   let current = monitor.processes.first(where: { $0.pid == target.pid }),
+                   current.name == target.name,
+                   current.path == target.path,
+                   current.startTime == target.startTime {
+                    monitor.terminate(pid: target.pid, force: terminateForce)
                 }
+                pendingTerminate = nil
+                selectedPID = nil
             }
         } message: {
-            if let pid = selectedPID,
-               let p = monitor.processes.first(where: { $0.pid == pid }) {
-                Text("\(p.name) (PID \(p.pid))")
+            if let target = pendingTerminate {
+                Text("\(target.name) (PID \(target.pid))")
             }
         }
     }
@@ -153,16 +161,21 @@ struct ContentView: View {
     }
 
     private func requestTerminate() {
+        guard let target = selectedProcess else { return }
+        pendingTerminate = target
         terminateForce = false
         showTerminateConfirm = true
     }
 
     private func requestForceQuit() {
+        guard let target = selectedProcess else { return }
+        pendingTerminate = target
         terminateForce = true
         showTerminateConfirm = true
     }
 
     private func closeDetail() {
+        pendingTerminate = nil
         selectedPID = nil
     }
 }

@@ -28,17 +28,19 @@ struct SwiftInsightApp: App {
                 Divider()
 
                 Button(L("cmd.show_all")) {
-                    AppSession.shared.monitor.categoryFilter = nil
-                    AppSession.shared.monitor.processScope = .all
+                    let monitor = AppSession.shared.monitor
+                    monitor.selectGroup(nil)
+                    monitor.selectCategory(nil)
+                    monitor.processScope = .all
                 }
                 Button(L("cmd.only_system")) {
-                    AppSession.shared.monitor.categoryFilter = .appleSystem
+                    AppSession.shared.monitor.selectCategory(.appleSystem)
                 }
                 Button(L("cmd.only_app")) {
-                    AppSession.shared.monitor.categoryFilter = .appleApp
+                    AppSession.shared.monitor.selectCategory(.appleApp)
                 }
                 Button(L("cmd.only_third")) {
-                    AppSession.shared.monitor.categoryFilter = .thirdParty
+                    AppSession.shared.monitor.selectCategory(.thirdParty)
                 }
             }
             CommandMenu(L("cmd.menubar")) {
