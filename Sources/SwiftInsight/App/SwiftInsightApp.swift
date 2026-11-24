@@ -105,11 +105,34 @@ private struct SettingsRootView: View {
             .environmentObject(session.menuBar)
             .environmentObject(session.prefs)
             .environmentObject(session.groupStore)
+            .background(SettingsWindowAccessor())
             .onAppear {
                 session.bootstrapIfNeeded()
                 NSApp.setActivationPolicy(.regular)
                 NSApp.activate(ignoringOtherApps: true)
                 MainWindowCoordinator.updateDockVisibility()
             }
+    }
+}
+
+/// 给 SwiftUI 设置窗口打上稳定标识：标题会跟着标签页变化，不能靠标题识别
+private struct SettingsWindowAccessor: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            guard let window = view.window else { return }
+            window.identifier = NSUserInterfaceItemIdentifier(MainWindowCoordinator.settingsWindowID)
+            MainWindowCoordinator.updateDockVisibility()
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            guard let window = nsView.window else { return }
+            if window.identifier?.rawValue != MainWindowCoordinator.settingsWindowID {
+                window.identifier = NSUserInterfaceItemIdentifier(MainWindowCoordinator.settingsWindowID)
+            }
+        }
     }
 }

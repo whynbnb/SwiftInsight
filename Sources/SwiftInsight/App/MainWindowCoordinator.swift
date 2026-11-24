@@ -10,11 +10,14 @@ extension Notification.Name {
 @MainActor
 enum MainWindowCoordinator {
     static let mainWindowID = "main-swiftinsight"
+    /// SwiftUI 设置窗口标题会随标签页变化，用稳定标识识别它
+    static let settingsWindowID = "settings-swiftinsight"
     private static let launchMainVisibleKey = "launchMainWindowVisible"
     private static var closeHandlers: [ObjectIdentifier: WindowCloseHandler] = [:]
     private static weak var processMonitor: ProcessMonitor?
     private static var hostedMainWindow: NSWindow?
     private static var launchSettled = false
+    private static var auxiliaryObserver: AuxiliaryWindowObserver?
     /// 关闭后延迟销毁主窗口：释放 SwiftUI 视图树 / 图层 / 图表缓存
     private static var pendingDestroy: DispatchWorkItem?
 
@@ -33,7 +36,17 @@ enum MainWindowCoordinator {
 
     static func bindProcessMonitor(_ monitor: ProcessMonitor) {
         processMonitor = monitor
+        installAuxiliaryWindowObserver()
         notifyMainVisibility()
+    }
+
+    /// 设置 / 关于等辅助窗口的关闭、缩放不会经过主窗口代理，
+    /// 需要统一监听，关闭后重新计算 Dock 图标与激活策略。
+    private static func installAuxiliaryWindowObserver() {
+        guard auxiliaryObserver == nil else { return }
+        let observer = AuxiliaryWindowObserver()
+        auxiliaryObserver = observer
+        observer.install()
     }
 
     /// 启动：按偏好打开主窗或仅菜单栏（不先建窗再藏）
@@ -190,9 +203,7 @@ enum MainWindowCoordinator {
         }
         let hasSettings = NSApp.windows.contains { win in
             guard win.isVisible else { return false }
-            let t = win.title.lowercased()
-            return t.contains("settings") || t.contains("设置")
-                || t.contains("preferences") || t.contains("偏好")
+            return AuxiliaryWindowObserver.isAuxiliary(win)
         }
 
         if hasVisibleMain || hasAbout || hasSettings {
@@ -215,6 +226,78 @@ enum MainWindowCoordinator {
 
     static func persistLaunchStateBeforeTerminate() {
         preferredMainWindowVisible = !visibleMainWindows().isEmpty
+    }
+}
+
+/// 监听不属于主窗口代理链的辅助窗口（设置 / 关于）
+@MainActor
+private final class AuxiliaryWindowObserver: NSObject {
+    private var installed = false
+
+    func install() {
+        guard !installed else { return }
+        installed = true
+        let center = NotificationCenter.default
+        center.addObserver(
+            self,
+            selector: #selector(windowWillClose(_:)),
+            name: NSWindow.willCloseNotification,
+            object: nil
+        )
+        center.addObserver(
+            self,
+            selector: #selector(windowDidBecomeKey(_:)),
+            name: NSWindow.didBecomeKeyNotification,
+            object: nil
+        )
+        center.addObserver(
+            self,
+            selector: #selector(windowDidMiniaturize(_:)),
+            name: NSWindow.didMiniaturizeNotification,
+            object: nil
+        )
+        center.addObserver(
+            self,
+            selector: #selector(windowDidDeminiaturize(_:)),
+            name: NSWindow.didDeminiaturizeNotification,
+            object: nil
+        )
+    }
+
+    static func isAuxiliary(_ window: NSWindow) -> Bool {
+        if window.identifier?.rawValue == MainWindowCoordinator.settingsWindowID { return true }
+        if window.identifier?.rawValue == "about-swiftinsight" { return true }
+        // 兜底：个别系统版本设置窗口没有标识
+        let title = window.title.lowercased()
+        return title.contains("settings") || title.contains("设置")
+            || title.contains("preferences") || title.contains("偏好")
+    }
+
+    @objc private func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              Self.isAuxiliary(window) else { return }
+        // willClose 发出时窗口仍然可见，等本轮回合结束再判断
+        DispatchQueue.main.async {
+            MainWindowCoordinator.updateDockVisibility()
+        }
+    }
+
+    @objc private func windowDidBecomeKey(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              Self.isAuxiliary(window) else { return }
+        MainWindowCoordinator.updateDockVisibility()
+    }
+
+    @objc private func windowDidMiniaturize(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              Self.isAuxiliary(window) else { return }
+        MainWindowCoordinator.updateDockVisibility()
+    }
+
+    @objc private func windowDidDeminiaturize(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              Self.isAuxiliary(window) else { return }
+        MainWindowCoordinator.updateDockVisibility()
     }
 }
 
