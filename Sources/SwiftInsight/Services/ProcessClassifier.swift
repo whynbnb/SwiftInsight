@@ -913,27 +913,77 @@ enum ProcessClassifier {
     }
 
     /// 获取应用图标（进程级 NSCache，限制数量与成本）
+    ///
+    /// NSWorkspace 返回的图标通常带 1024px 级别的位图表示。列表只显示 16pt，
+    /// 直接缓存原图会让每个 App 常驻数 MB。这里统一缩成 32×32 像素（16pt @2x）。
     static func icon(for path: String, name: String) -> NSImage {
         let cacheKey = (path.isEmpty ? name : path) as NSString
         if let cached = iconCache.object(forKey: cacheKey) {
             return cached
         }
 
-        let image: NSImage
+        let source: NSImage
         if !path.isEmpty {
             if let appPath = mainExecutableAppPath(path: path) {
                 // 仅当进程是某个 App 的主可执行文件时使用该 App 图标
-                image = NSWorkspace.shared.icon(forFile: appPath)
+                source = NSWorkspace.shared.icon(forFile: appPath)
             } else {
                 // JDK / 运行时 / 辅助二进制：使用自身文件图标，避免套用宿主 App 图标
-                image = NSWorkspace.shared.icon(forFile: path)
+                source = NSWorkspace.shared.icon(forFile: path)
             }
         } else {
-            image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: name) ?? NSImage()
+            source = NSImage(systemSymbolName: "gearshape", accessibilityDescription: name) ?? NSImage()
         }
-        // 列表统一 16pt，降低位图成本
-        image.size = NSSize(width: 16, height: 16)
-        iconCache.setObject(image, forKey: cacheKey, cost: 16 * 16 * 4)
+
+        let image = downscaledIcon(source, pixelSize: 32)
+        iconCache.setObject(image, forKey: cacheKey, cost: 32 * 32 * 4)
+        return image
+    }
+
+    /// 生成固定尺寸的小图标，释放 NSWorkspace 原图的高分辨率表示
+    private static func downscaledIcon(_ source: NSImage, pixelSize: Int) -> NSImage {
+        // NSImage 绘制必须在主线程；非主线程调用时退回原图，避免未定义行为
+        guard Thread.isMainThread else { return source }
+        guard pixelSize > 0,
+              let rep = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: pixelSize,
+                pixelsHigh: pixelSize,
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: 0,
+                bitsPerPixel: 0
+              ) else {
+            return source
+        }
+
+        // bitmap 是像素尺寸，NSImageRep.size 是点尺寸；上下文按 2x 缩放，
+        // 因此绘制矩形必须用点尺寸，否则只会画出图标的左下角。
+        let pointSize = CGFloat(pixelSize) / 2
+        rep.size = NSSize(width: pointSize, height: pointSize)
+        NSGraphicsContext.saveGraphicsState()
+        if let context = NSGraphicsContext(bitmapImageRep: rep) {
+            NSGraphicsContext.current = context
+            context.imageInterpolation = .high
+            let rect = NSRect(x: 0, y: 0, width: pointSize, height: pointSize)
+            source.draw(
+                in: rect,
+                from: NSRect(origin: .zero, size: source.size),
+                operation: .copy,
+                fraction: 1,
+                respectFlipped: false,
+                hints: [.interpolation: NSImageInterpolation.high.rawValue]
+            )
+            context.flushGraphics()
+        }
+        NSGraphicsContext.restoreGraphicsState()
+
+        let image = NSImage(size: NSSize(width: pointSize, height: pointSize))
+        image.addRepresentation(rep)
+        image.isTemplate = source.isTemplate
         return image
     }
 

@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import Darwin
 
 /// 菜单栏
 /// - 数据：AppKit 面板 + 强引用 ProcessMonitor（与 @StateObject 同一实例）
@@ -20,6 +21,8 @@ final class MenuBarController: NSObject, ObservableObject {
     private var statusItem: NSStatusItem?
     private var panel: NSPanel?
     private var panelContent: MenuBarPanelView?
+    /// 面板关闭后延迟释放：不常用面板不再长期占用视图树与图层内存
+    private var panelTeardown: DispatchWorkItem?
     private var dataCancellables = Set<AnyCancellable>()
     private var preferenceCancellables = Set<AnyCancellable>()
     private var localEventMonitor: Any?
@@ -75,6 +78,9 @@ final class MenuBarController: NSObject, ObservableObject {
     }
 
     private func ensurePanel() {
+        // 取消尚未执行的释放，复用现有面板
+        panelTeardown?.cancel()
+        panelTeardown = nil
         if panel != nil, panelContent != nil { return }
         let size = contentSize
         let content = MenuBarPanelView(frame: NSRect(origin: .zero, size: size), topCount: AppPreferences.shared.menuBarTopCount)
@@ -277,6 +283,30 @@ final class MenuBarController: NSObject, ObservableObject {
         if let monitor {
             bindIconOnly(monitor)
         }
+        schedulePanelTeardown()
+    }
+
+    /// 关闭一段时间后释放面板视图树与窗口图层。
+    /// 快速反复开关（15s 内）仍复用原面板，不影响响应速度；
+    /// 长期只用图标时不再为面板保留内存。
+    private func schedulePanelTeardown(after delay: TimeInterval = 15) {
+        panelTeardown?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.panel?.isVisible != true else { return }
+            self.stopEventMonitors()
+            self.removeFocusObservers()
+            self.panel?.contentView = nil
+            self.panel?.orderOut(nil)
+            self.panel = nil
+            self.panelContent = nil
+            self.panelTeardown = nil
+            // 归还面板视图树释放后留在 malloc 中的空页
+            DispatchQueue.global(qos: .utility).async {
+                _ = malloc_zone_pressure_relief(nil, 0)
+            }
+        }
+        panelTeardown = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     private var menuBarPanelFlag: Bool {

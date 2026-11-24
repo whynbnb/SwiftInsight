@@ -38,13 +38,15 @@ enum ProcessInspector {
         let actual = Int(filled) / MemoryLayout<proc_fdinfo>.stride
         var result: [ProcessOpenFile] = []
         result.reserveCapacity(min(actual, 200))
+        // 复用路径缓冲：一次扫描最多 200 个 fd，不必为每个 fd 分配 2KB
+        var pathBuffer = [UInt8](repeating: 0, count: 2048)
 
         for i in 0..<actual {
             let fdInfo = buffer[i]
             let fd = fdInfo.proc_fd
             switch fdInfo.proc_fdtype {
             case PROX_FDTYPE_VNODE:
-                if let path = vnodePath(pid: pid, fd: fd) {
+                if let path = vnodePath(pid: pid, fd: fd, buffer: &pathBuffer) {
                     result.append(ProcessOpenFile(id: fd, fd: fd, path: path, kind: L("file.kind.file")))
                 }
             case PROX_FDTYPE_SOCKET:
@@ -61,9 +63,15 @@ enum ProcessInspector {
         return result
     }
 
-    private static func vnodePath(pid: Int32, fd: Int32) -> String? {
+    private static func vnodePath(pid: Int32, fd: Int32, buffer: inout [UInt8]) -> String? {
         // vnode_fdinfowithpath 布局因 SDK 略有差异，用原始缓冲扫描以 '/' 开头的路径
-        var buffer = [UInt8](repeating: 0, count: 2048)
+        guard !buffer.isEmpty else { return nil }
+        // 复用缓冲区：先清零，避免上一次更长的路径残留
+        buffer.withUnsafeMutableBytes { raw in
+            if let base = raw.baseAddress {
+                memset(base, 0, raw.count)
+            }
+        }
         let result = buffer.withUnsafeMutableBytes { raw in
             proc_pidfdinfo(pid, fd, PROC_PIDFDVNODEPATHINFO, raw.baseAddress, Int32(raw.count))
         }

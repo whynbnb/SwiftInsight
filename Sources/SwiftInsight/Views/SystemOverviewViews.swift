@@ -267,7 +267,6 @@ private struct CoreDotsStrip: View {
                     drawBars(context: context, size: size, barW: barW, gap: gap)
                 }
             }
-            .drawingGroup()
         }
         .help(helpText)
     }

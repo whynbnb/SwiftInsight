@@ -418,6 +418,8 @@ final class ProcessMonitor: ObservableObject {
         summary = ResourceSummary()
         if !groupCounts.isEmpty { groupCounts = [:] }
         previousCPU = [:]
+        classificationCache = [:]
+        usernameCache = [:]
         historyStore.reset()
         ProcessClassifier.purgeIconCache()
         if !systemHistory.isEmpty { systemHistory = [] }
@@ -823,7 +825,9 @@ final class ProcessMonitor: ObservableObject {
         )
         publishHistory()
 
-        recomputeDisplayed()
+        // 与上面的 @Published 更新处于同一个 runloop turn：
+        // SwiftUI 只重绘一次，避免每个采样触发两轮视图更新。
+        recomputeDisplayedNow()
         recomputeGroupCounts()
         refreshInspectedDetail(force: false)
         finishSample()
@@ -1030,6 +1034,8 @@ private enum ProcessSampler {
         var newPrev: [Int32: (utime: Double, stime: Double, wall: TimeInterval)] = [:]
         var newClassCache = classificationCache
         var newUserCache = usernameCache
+        // 复用路径缓冲：每个进程不再单独分配 MAXPATHLEN
+        var pathBuffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
 
         for i in 0..<pidCount {
             let pid = pids[i]
@@ -1038,7 +1044,7 @@ private enum ProcessSampler {
 
             guard let info = taskInfo(for: pid, privileged: privileged?.byPID[pid]) else { continue }
 
-            let path = processPath(pid: pid)
+            let path = processPath(pid: pid, buffer: &pathBuffer)
             let name = processName(path: path, fallback: info.name)
 
             let bid: String?
@@ -1288,20 +1294,29 @@ private enum ProcessSampler {
         return KinfoIdentity(uid: uid, ppid: ppid, name: name, start: start)
     }
 
-    private static func processPath(pid: Int32) -> String {
-        var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+    private static func processPath(pid: Int32, buffer: inout [CChar]) -> String {
+        guard !buffer.isEmpty else { return "" }
         let ret = proc_pidpath(pid, &buffer, UInt32(buffer.count))
-        if ret > 0 {
-            let bytes = buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
+        guard ret > 0 else { return "" }
+        return buffer.withUnsafeBufferPointer { ptr in
+            guard let base = ptr.baseAddress else { return "" }
+            let limit = min(Int(ret), ptr.count)
+            var end = 0
+            while end < limit, ptr[end] != 0 { end += 1 }
+            let bytes = UnsafeRawBufferPointer(start: base, count: end)
             return String(decoding: bytes, as: UTF8.self)
         }
-        return ""
     }
 
     private static func processName(path: String, fallback: String) -> String {
         if !path.isEmpty {
-            let base = URL(fileURLWithPath: path).lastPathComponent
-            if !base.isEmpty { return base }
+            // 避免每个进程创建 URL 对象：直接取最后一个 "/" 之后的部分
+            if let slash = path.lastIndex(of: "/") {
+                let base = path[path.index(after: slash)...]
+                if !base.isEmpty { return String(base) }
+            } else {
+                return path
+            }
         }
         if !fallback.isEmpty { return fallback }
         return "unknown"

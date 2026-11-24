@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Darwin
 
 extension Notification.Name {
     static let showMainWindow = Notification.Name("me.whynbnb.SwiftInsight.showMainWindow")
@@ -85,6 +86,8 @@ enum MainWindowCoordinator {
         NSApp.activate(ignoringOtherApps: true)
 
         if let window = hostedMainWindow {
+            // 关闭时只释放了 SwiftUI 视图树，这里按需重建内容并复用窗口外壳
+            ensureMainContent(for: window)
             if window.isMiniaturized {
                 window.deminiaturize(nil)
             }
@@ -96,6 +99,17 @@ enum MainWindowCoordinator {
         }
 
         createAndShowMainWindow()
+    }
+
+    /// 复用已关闭的窗口外壳时，重新挂载 SwiftUI 根视图
+    private static func ensureMainContent(for window: NSWindow) {
+        guard mainHosting == nil else { return }
+        let frame = window.frame
+        let hosting = NSHostingController(rootView: makeMainRootView())
+        mainHosting = hosting
+        window.contentViewController = hosting
+        // 重新挂载内容时 AppKit 可能按 hosting 的理想尺寸改窗口，恢复原 frame
+        window.setFrame(frame, display: false)
     }
 
     private static var mainHosting: NSHostingController<AnyView>?
@@ -150,17 +164,23 @@ enum MainWindowCoordinator {
     }
 
     private static func tearDownMainWindow(_ window: NSWindow) {
-        let key = ObjectIdentifier(window)
-        window.delegate = nil
-        closeHandlers.removeValue(forKey: key)
-        // 先断开 SwiftUI 宿主，再关闭，确保整棵视图树可回收
+        // 只断开 SwiftUI 宿主并隐藏窗口，保留窗口外壳供下次复用。
+        // 这样反复关闭 / 打开不会在 NSApp.windows 中累积空窗口。
         window.contentViewController = nil
-        window.orderOut(nil)
-        window.close()
-        hostedMainWindow = nil
         mainHosting = nil
+        window.orderOut(nil)
+        hostedMainWindow = window
         pendingDestroy = nil
         notifyMainVisibility()
+        // 大块 SwiftUI 视图树释放后，malloc 默认会保留空页；主动归还给系统
+        relieveAllocatorMemory()
+    }
+
+    /// 后台归还空闲页，避免关闭窗口后常驻内存看起来不下降
+    private static func relieveAllocatorMemory() {
+        DispatchQueue.global(qos: .utility).async {
+            _ = malloc_zone_pressure_relief(nil, 0)
+        }
     }
 
     static func updateDockVisibility() {

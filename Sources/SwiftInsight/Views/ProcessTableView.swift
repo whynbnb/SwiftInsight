@@ -284,7 +284,8 @@ private struct ProcessNSTable: NSViewRepresentable {
 
         func apply(rows: [ProcessDisplayRow], selectedPID: Int32?) {
             // 始终采用最新快照，避免 isApplying 期间丢弃有数据的更新
-            let dataChanged = !Self.sameDisplayData(self.rows, rows)
+            let countChanged = self.rows.count != rows.count
+            let dataChanged = countChanged || !Self.sameDisplayData(self.rows, rows)
             let selectionChanged = selectedPID != currentSelectedPID()
             guard dataChanged || selectionChanged else { return }
 
@@ -298,7 +299,13 @@ private struct ProcessNSTable: NSViewRepresentable {
                 let savedOrigin = clip?.bounds.origin
 
                 if dataChanged {
-                    table.reloadData()
+                    if countChanged {
+                        table.reloadData()
+                    } else {
+                        // 行数不变时只刷新可见单元格：避免每次采样重建整张表的
+                        // 视图 / Auto Layout 对象，显著降低常驻内存增长。
+                        self.reloadVisibleRows(of: table)
+                    }
                 }
 
                 if let pid = savedSelection,
@@ -608,6 +615,26 @@ private struct ProcessNSTable: NSViewRepresentable {
             if cpu >= 20 { return .systemOrange }
             if cpu >= 5 { return .labelColor }
             return .secondaryLabelColor
+        }
+
+        /// 行数不变时仅重载可见行，避免整表重建带来的布局对象与内存增长
+        private func reloadVisibleRows(of table: NSTableView) {
+            let columns = IndexSet(integersIn: 0..<table.numberOfColumns)
+            let visible = table.rows(in: table.visibleRect)
+            guard visible.length > 0, visible.location != NSNotFound, !columns.isEmpty else {
+                table.reloadData()
+                return
+            }
+            let start = max(0, visible.location)
+            let end = min(rows.count, start + visible.length)
+            guard start < end else {
+                table.reloadData()
+                return
+            }
+            table.reloadData(
+                forRowIndexes: IndexSet(integersIn: start..<end),
+                columnIndexes: columns
+            )
         }
 
         private static func sameDisplayData(_ a: [ProcessDisplayRow], _ b: [ProcessDisplayRow]) -> Bool {
