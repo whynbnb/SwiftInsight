@@ -163,7 +163,7 @@ enum GroupTransfer {
     // MARK: - Helpers
 
     private static var appVersionString: String {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.3"
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.4"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
         return build.isEmpty ? version : "\(version) (\(build))"
     }
