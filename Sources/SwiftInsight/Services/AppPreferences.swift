@@ -644,6 +644,7 @@ enum L10n {
         "cmd.only_third": "仅第三方",
         "cmd.menubar": "菜单栏",
         "cmd.about": "关于 SwiftInsight",
+        "cmd.settings": "设置…",
 
         // Menu bar panel
         "mb.open_main": "打开主窗口",
@@ -1041,6 +1042,7 @@ enum L10n {
         "cmd.only_third": "Third-Party only",
         "cmd.menubar": "Menu Bar",
         "cmd.about": "About SwiftInsight",
+        "cmd.settings": "Settings…",
 
         "mb.open_main": "Open Main Window",
         "mb.quit_app": "Quit SwiftInsight",

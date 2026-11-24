@@ -4,6 +4,8 @@ import AppKit
 @main
 struct SwiftInsightApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    /// 观察语言 / 主题等偏好：切换语言后重建 App 菜单命令
+    @StateObject private var prefs = AppPreferences.shared
 
     var body: some Scene {
         // 无 WindowGroup：仅菜单栏启动时不创建主窗口，从根上消除闪屏
@@ -92,8 +94,13 @@ struct SwiftInsightApp: App {
 
 /// 关于窗口单例持有：关闭后复用，避免每次打开都新建并泄漏
 @MainActor
-private enum AboutWindowHolder {
+enum AboutWindowHolder {
     static var window: NSWindow?
+
+    /// 语言切换后更新窗口标题；内容由 AboutView 自己观察偏好刷新
+    static func refreshLocalizedUI() {
+        window?.title = L("cmd.about")
+    }
 }
 
 /// Settings 在真正打开时再取 session，避免启动期过早初始化

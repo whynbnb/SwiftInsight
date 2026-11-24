@@ -3,6 +3,9 @@ import AppKit
 
 /// 应用菜单「关于 SwiftInsight」窗口内容
 struct AboutView: View {
+    /// 语言切换后窗口内容需要立即重建（L() 依赖运行时语言）
+    @EnvironmentObject private var prefs: AppPreferences
+
     private let repoURL = URL(string: "https://github.com/whynbnb/SwiftInsight")!
     private let licenseURL = URL(string: "https://github.com/whynbnb/SwiftInsight/blob/main/LICENSE")!
     private let repoDisplay = "whynbnb/SwiftInsight"
@@ -85,6 +88,7 @@ struct AboutView: View {
         }
         .frame(width: 400, height: 360)
         .background(.background)
+        .id(prefs.language)
     }
 }
 
