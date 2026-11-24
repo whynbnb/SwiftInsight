@@ -221,6 +221,8 @@ final class AppPreferences: ObservableObject {
         // 静态初始化过早时 NSApp 仍为 nil
         guard NSApp != nil else { return }
         NSApp.appearance = theme.nsAppearance
+        // 菜单栏图标缓存按外观区分，主题切换后也主动清一次
+        MenuBarIconRenderer.invalidateCache()
     }
 
     func isCategoryHidden(_ item: CategoryFilterItem) -> Bool {

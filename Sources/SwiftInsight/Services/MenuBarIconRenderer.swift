@@ -19,10 +19,20 @@ enum MenuBarIconRenderer {
         ]
     }()
 
+    /// 系统深浅色切换后清空缓存（颜色在绘制时解析）
+    @MainActor
+    static func invalidateCache() {
+        imageCache.removeAllObjects()
+    }
+
+    @MainActor
     static func image(mode: MenuBarIconMode, cpu: Double, memory: Double) -> NSImage {
         let cpuBucket = Int(min(100, max(0, cpu)).rounded())
         let memBucket = Int(min(100, max(0, memory)).rounded())
-        let cacheKey = "\(mode.rawValue)|\(cpuBucket)|\(memBucket)" as NSString
+        // 颜色是动态系统色：缓存必须区分外观，否则切换深浅色后会复用旧渲染
+        let appearance = NSApp.effectiveAppearance
+            .bestMatch(from: [.darkAqua, .aqua])?.rawValue ?? "aqua"
+        let cacheKey = "\(appearance)|\(mode.rawValue)|\(cpuBucket)|\(memBucket)" as NSString
         if let cached = imageCache.object(forKey: cacheKey) {
             return cached
         }
