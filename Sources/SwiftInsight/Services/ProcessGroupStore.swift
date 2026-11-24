@@ -101,6 +101,30 @@ final class ProcessGroupStore: ObservableObject {
         persist()
     }
 
+    /// 导入分组与自定义规则：只追加，不覆盖现有数据
+    @discardableResult
+    func importTransfer(_ document: GroupTransfer.Document) -> (groups: Int, rules: Int) {
+        let merged = GroupTransfer.merge(
+            document: document,
+            existingGroups: groups,
+            existingRules: savedRules
+        )
+        guard !merged.groups.isEmpty || !merged.rules.isEmpty else { return (0, 0) }
+
+        for rule in merged.rules {
+            savedRules.append(normalizedSavedRule(rule))
+        }
+        for group in merged.groups {
+            var copy = group
+            copy.name = normalizedName(copy.name)
+            groups.append(copy)
+        }
+        cachedSavedRulesByID = nil
+        persistSavedRules()
+        persist()
+        return (merged.groups.count, merged.rules.count)
+    }
+
     // MARK: - Rule library query
 
     func savedRule(with id: UUID?) -> SavedGroupRule? {

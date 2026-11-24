@@ -16,6 +16,7 @@
 		3384EFC1607AD6A7EFAD7A41 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC71ACF22310115BAC6B19AA /* SettingsView.swift */; };
 		36D06A30F1B5A33B04BB73A1 /* ProcessTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84F5067E32F8A639C3847E0C /* ProcessTableView.swift */; };
 		37AE65F9948B3FC6CFCD129A /* ProcessGroupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 782E651B9410FE24188C7F64 /* ProcessGroupStore.swift */; };
+		8C4D9E1F62AB3705D9C8E4B7 /* GroupTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1E7C2B93D4F60A8B7E1C33 /* GroupTransfer.swift */; };
 		3A20B052FB14C5B6828D8FC7 /* BuiltinRuleCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF68360C6FB231E0E45EE63B /* BuiltinRuleCatalog.swift */; };
 		3BE51E93F92353CACAA1581F /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A83AD4E6ED34ABC2A6492A04 /* ContentView.swift */; };
 		408CBB781AD085557496F602 /* ProcessGroupMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8A230FF8A2BEEEC3B236D03 /* ProcessGroupMatcher.swift */; };
@@ -78,6 +79,7 @@
 		6940DD80DAA83DAB6178D995 /* SwiftInsight.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SwiftInsight.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		77BBA1CBF5D63BB4E04DC02B /* ProcessAggregator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessAggregator.swift; sourceTree = "<group>"; };
 		782E651B9410FE24188C7F64 /* ProcessGroupStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessGroupStore.swift; sourceTree = "<group>"; };
+		5A1E7C2B93D4F60A8B7E1C33 /* GroupTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupTransfer.swift; sourceTree = "<group>"; };
 		7D92568121F5702A494E93B7 /* HelperInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperInstaller.swift; sourceTree = "<group>"; };
 		7EC15AC7DAA9195BA6C32F75 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		84F5067E32F8A639C3847E0C /* ProcessTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessTableView.swift; sourceTree = "<group>"; };
@@ -183,6 +185,7 @@
 				DF68360C6FB231E0E45EE63B /* BuiltinRuleCatalog.swift */,
 				F294920FB9C0E8666D593522 /* ControlKeyMonitor.swift */,
 				7D92568121F5702A494E93B7 /* HelperInstaller.swift */,
+				5A1E7C2B93D4F60A8B7E1C33 /* GroupTransfer.swift */,
 				D7043061F96ACB3859DF0DBB /* LaunchAtLogin.swift */,
 				0D4EC5D3D734F6F239B4AEC6 /* MenuBarIconRenderer.swift */,
 				3E1B36FD7551E1B95FD8D86A /* MetricsHistoryStore.swift */,
@@ -388,6 +391,7 @@
 				408CBB781AD085557496F602 /* ProcessGroupMatcher.swift in Sources */,
 				BD1D2027D7A5D5EF52DCFCF3 /* ProcessGroupModels.swift in Sources */,
 				37AE65F9948B3FC6CFCD129A /* ProcessGroupStore.swift in Sources */,
+				8C4D9E1F62AB3705D9C8E4B7 /* GroupTransfer.swift in Sources */,
 				1F363352616DED4F6DC5D27A /* ProcessInspector.swift in Sources */,
 				EA56A137007E0FE848CD6726 /* ProcessModels.swift in Sources */,
 				4235C5321A8908A3CC10D14C /* ProcessMonitor.swift in Sources */,

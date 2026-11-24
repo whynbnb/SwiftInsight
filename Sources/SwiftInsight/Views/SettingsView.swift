@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @EnvironmentObject private var monitor: ProcessMonitor
@@ -13,6 +15,8 @@ struct SettingsView: View {
     @State private var launchAtLoginEnabled = LaunchAtLogin.isEnabled
     @State private var launchAtLoginMessage: String?
     @State private var launchAtLoginMessageIsError = false
+    @State private var transferMessage: String?
+    @State private var transferMessageIsError = false
 
     var body: some View {
         TabView {
@@ -187,6 +191,28 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Section {
+                HStack(spacing: 12) {
+                    Button(L("settings.groups.import")) { importGroups() }
+                    Button(L("settings.groups.export")) { exportGroups() }
+                        .disabled(groupStore.groups.isEmpty && groupStore.savedRules.isEmpty)
+                    Spacer()
+                }
+
+                if let transferMessage {
+                    Text(transferMessage)
+                        .font(.caption)
+                        .foregroundStyle(transferMessageIsError ? Color.red : Color.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } header: {
+                Text(L("settings.groups.transfer"))
+            } footer: {
+                Text(L("settings.groups.transfer.caption"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .sheet(item: $editingGroup) { group in
@@ -194,6 +220,86 @@ struct SettingsView: View {
                 groupStore.update(saved)
             }
         }
+    }
+
+    // MARK: - Import / Export
+
+    private func importGroups() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            let data = try Data(contentsOf: url)
+            let document = try GroupTransfer.decodeDocument(from: data)
+            let result = groupStore.importTransfer(document)
+            if result.groups == 0 && result.rules == 0 {
+                transferMessage = L("settings.groups.import.empty")
+                transferMessageIsError = true
+            } else {
+                transferMessage = String(
+                    format: L("settings.groups.import.done"),
+                    result.groups,
+                    result.rules
+                )
+                transferMessageIsError = false
+            }
+        } catch {
+            transferMessage = String(
+                format: L("settings.groups.transfer.read_failed"),
+                errorText(error)
+            )
+            transferMessageIsError = true
+        }
+    }
+
+    private func exportGroups() {
+        let data: Data
+        do {
+            data = try GroupTransfer.exportData(
+                groups: groupStore.groups,
+                savedRules: groupStore.savedRules
+            )
+        } catch {
+            transferMessage = String(
+                format: L("settings.groups.transfer.write_failed"),
+                errorText(error)
+            )
+            transferMessageIsError = true
+            return
+        }
+
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = "SwiftInsight-Groups.json"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            try data.write(to: url, options: .atomic)
+            transferMessage = String(
+                format: L("settings.groups.export.done"),
+                groupStore.groups.count,
+                groupStore.savedRules.filter { !$0.isBuiltin }.count
+            )
+            transferMessageIsError = false
+        } catch {
+            transferMessage = String(
+                format: L("settings.groups.transfer.write_failed"),
+                errorText(error)
+            )
+            transferMessageIsError = true
+        }
+    }
+
+    private func errorText(_ error: Error) -> String {
+        if let localized = error as? LocalizedError, let description = localized.errorDescription {
+            return description
+        }
+        return error.localizedDescription
     }
 
     private func customGroupRow(_ group: ProcessFilterGroup, index: Int) -> some View {
