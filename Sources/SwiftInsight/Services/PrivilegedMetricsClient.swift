@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 /// 调用已安装的 root setuid helper，补全普通用户读不到的进程 CPU/内存，
 /// 以及 CPU 频率 / 温度（sensors 命令）。
@@ -56,7 +57,7 @@ enum PrivilegedMetricsClient {
     static func helperStatus() -> (installed: Bool, root: Bool) {
         autoreleasepool {
             guard let url = helperURL else { return (false, false) }
-            guard let data = run(url, arguments: ["status"]) else { return (true, false) }
+            guard let data = run(url, arguments: ["status"], timeout: 3) else { return (true, false) }
             guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 return (true, false)
             }
@@ -67,7 +68,7 @@ enum PrivilegedMetricsClient {
     static func sampleAll() -> Snapshot? {
         autoreleasepool {
             guard let url = helperURL else { return nil }
-            guard let data = run(url, arguments: ["sample"]) else { return nil }
+            guard let data = run(url, arguments: ["sample"], timeout: 5) else { return nil }
             guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let list = obj["processes"] as? [[String: Any]] else {
                 return nil
@@ -128,7 +129,7 @@ enum PrivilegedMetricsClient {
 
     private static func sampleSensorsBlocking() -> Sensors {
         guard let url = helperURL else { return Sensors() }
-        guard let data = run(url, arguments: ["sensors"]) else { return Sensors() }
+        guard let data = run(url, arguments: ["sensors"], timeout: 10) else { return Sensors() }
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return Sensors()
         }
@@ -149,7 +150,12 @@ enum PrivilegedMetricsClient {
         if sensors.cpuTemperatureC > 0 { metrics.cpuTemperatureC = sensors.cpuTemperatureC }
     }
 
-    private static func run(_ url: URL, arguments: [String]) -> Data? {
+    /// 带超时地运行 Helper；Helper / powermetrics 卡住时不能把采样队列一起拖死
+    private static func run(
+        _ url: URL,
+        arguments: [String],
+        timeout: TimeInterval = 5
+    ) -> Data? {
         autoreleasepool {
             let process = Process()
             process.executableURL = url
@@ -181,6 +187,9 @@ enum PrivilegedMetricsClient {
                 }
             }
 
+            let exited = DispatchSemaphore(value: 0)
+            process.terminationHandler = { _ in exited.signal() }
+
             do {
                 try process.run()
             } catch {
@@ -189,7 +198,20 @@ enum PrivilegedMetricsClient {
                 return nil
             }
 
-            process.waitUntilExit()
+            if exited.wait(timeout: .now() + timeout) == .timedOut {
+                // 先温和终止，仍不退出则强杀；之后直接丢弃管道，避免 readToEnd 继续阻塞
+                process.terminate()
+                if exited.wait(timeout: .now() + 1) == .timedOut {
+                    kill(process.processIdentifier, SIGKILL)
+                    _ = exited.wait(timeout: .now() + 1)
+                }
+                outHandle.readabilityHandler = nil
+                errHandle.readabilityHandler = nil
+                try? outHandle.close()
+                try? errHandle.close()
+                return nil
+            }
+
             outHandle.readabilityHandler = nil
             errHandle.readabilityHandler = nil
 

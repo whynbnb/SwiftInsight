@@ -109,6 +109,10 @@ final class ProcessMonitor: ObservableObject {
     private var usernameCache: [uid_t: String] = [:]
     private var isSampling = false
     private var lastDetailScanUptime: TimeInterval = 0
+    /// 打开文件扫描是重活：同一时间只允许一个扫描，且丢弃过期结果
+    private var detailScanInFlight = false
+    private var detailScanGeneration = 0
+    private var detailScanPending = false
     private var lastIconCPUBucket = -1
     private var lastIconMemBucket = -1
     /// 最近一次含进程的采样（面板 Top 重建用，不对外发布）
@@ -924,13 +928,23 @@ final class ProcessMonitor: ObservableObject {
         guard let pid = inspectedPID else {
             selectedDetail = ProcessDetailInfo()
             lastDetailScanUptime = 0
+            detailScanGeneration &+= 1
+            detailScanPending = false
             return
         }
         let now = ProcessInfo.processInfo.systemUptime
         if !force, lastDetailScanUptime > 0, now - lastDetailScanUptime < detailScanInterval {
             return
         }
+        // 上一次扫描还没结束就不再叠一个新的：5 秒一轮时容易越积越多
+        if detailScanInFlight {
+            if force { detailScanPending = true }
+            return
+        }
         lastDetailScanUptime = now
+        detailScanInFlight = true
+        detailScanGeneration &+= 1
+        let generation = detailScanGeneration
         // 打开文件扫描较重；用独立队列，避免堵住进程采样
         let all = processes
         DispatchQueue.global(qos: .utility).async { [weak self] in
@@ -938,8 +952,19 @@ final class ProcessMonitor: ObservableObject {
                 ProcessInspector.inspect(pid: pid, processes: all)
             }
             DispatchQueue.main.async {
-                guard let self, self.inspectedPID == pid else { return }
-                self.selectedDetail = detail
+                guard let self else { return }
+                self.detailScanInFlight = false
+                let isCurrent = self.inspectedPID == pid && self.detailScanGeneration == generation
+                if isCurrent {
+                    self.selectedDetail = detail
+                }
+                // 扫描期间用户又触发了强制刷新：补一次最新结果
+                if self.detailScanPending {
+                    self.detailScanPending = false
+                    if self.inspectedPID != nil {
+                        self.refreshInspectedDetail(force: true)
+                    }
+                }
             }
         }
     }
