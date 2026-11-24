@@ -88,12 +88,9 @@ struct ContentView: View {
                 pendingTerminate = nil
             }
             Button(terminateForce ? L("alert.force_quit_btn") : L("alert.quit_btn"), role: .destructive) {
-                if let target = pendingTerminate,
-                   let current = monitor.processes.first(where: { $0.pid == target.pid }),
-                   current.name == target.name,
-                   current.path == target.path,
-                   current.startTime == target.startTime {
-                    monitor.terminate(pid: target.pid, force: terminateForce)
+                if let target = pendingTerminate {
+                    // monitor 会再校验一次身份：确认框停留期间 PID 可能已被复用
+                    monitor.terminate(target, force: terminateForce)
                 }
                 pendingTerminate = nil
                 selectedPID = nil

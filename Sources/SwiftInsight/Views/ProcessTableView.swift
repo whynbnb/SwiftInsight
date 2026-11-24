@@ -18,8 +18,8 @@ struct ProcessTableView: View {
                 groups: groupStore.groups,
                 isProcessAlive: { pid in monitor.processes.contains { $0.pid == pid } },
                 onSort: { monitor.toggleSort($0) },
-                onTerminate: { pid, force in
-                    monitor.terminate(pid: pid, force: force)
+                onTerminate: { process, force in
+                    monitor.terminate(process, force: force)
                 },
                 onFilterCategory: { category in
                     monitor.selectCategory(category)
@@ -160,7 +160,7 @@ private struct ProcessNSTable: NSViewRepresentable {
     /// 判断选中 PID 是否仍在进程快照中（区别于「被筛选/折叠隐藏」）
     let isProcessAlive: (Int32) -> Bool
     var onSort: (SortColumn) -> Void
-    var onTerminate: (Int32, Bool) -> Void
+    var onTerminate: (MonitoredProcess, Bool) -> Void
     var onFilterCategory: (ProcessCategory) -> Void
     var onAddToGroup: (Int32, UUID) -> Void
     var onCreateGroupWithProcess: (Int32) -> Void
@@ -845,14 +845,15 @@ extension ProcessNSTable.Coordinator: NSMenuDelegate {
             menu.addItem(.separator())
         }
 
+        // 菜单可能在屏幕上停留很久：记录完整身份，点击时再由 monitor 校验 PID 是否被复用
         let quit = NSMenuItem(title: L("alert.quit_btn"), action: #selector(quitProcess(_:)), keyEquivalent: "")
         quit.target = self
-        quit.representedObject = process.pid
+        quit.representedObject = ProcessActionPayload(process: process)
         menu.addItem(quit)
 
         let force = NSMenuItem(title: L("alert.force_quit_btn"), action: #selector(forceQuitProcess(_:)), keyEquivalent: "")
         force.target = self
-        force.representedObject = process.pid
+        force.representedObject = ProcessActionPayload(process: process)
         menu.addItem(force)
 
         menu.addItem(.separator())
@@ -906,6 +907,14 @@ extension ProcessNSTable.Coordinator: NSMenuDelegate {
         menu.addItem(groupsItem)
     }
 
+    private final class ProcessActionPayload: NSObject {
+        let process: MonitoredProcess
+
+        init(process: MonitoredProcess) {
+            self.process = process
+        }
+    }
+
     private final class AddToGroupPayload: NSObject {
         let pid: Int32
         let groupID: UUID
@@ -932,13 +941,13 @@ extension ProcessNSTable.Coordinator: NSMenuDelegate {
     }
 
     @objc private func quitProcess(_ sender: NSMenuItem) {
-        guard let pid = sender.representedObject as? Int32 else { return }
-        parent.onTerminate(pid, false)
+        guard let payload = sender.representedObject as? ProcessActionPayload else { return }
+        parent.onTerminate(payload.process, false)
     }
 
     @objc private func forceQuitProcess(_ sender: NSMenuItem) {
-        guard let pid = sender.representedObject as? Int32 else { return }
-        parent.onTerminate(pid, true)
+        guard let payload = sender.representedObject as? ProcessActionPayload else { return }
+        parent.onTerminate(payload.process, true)
     }
 
     @objc private func revealInFinder(_ sender: NSMenuItem) {

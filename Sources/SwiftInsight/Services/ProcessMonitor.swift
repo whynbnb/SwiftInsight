@@ -701,6 +701,17 @@ final class ProcessMonitor: ObservableObject {
 
     // MARK: - Kill / Sample
 
+    /// 按进程快照终止：执行前校验身份，避免确认期间 / 菜单停留期间 PID 被复用误杀新进程
+    func terminate(_ target: MonitoredProcess, force: Bool = false) {
+        guard let current = processes.first(where: { $0.pid == target.pid }),
+              current.name == target.name,
+              current.path == target.path,
+              current.startTime == target.startTime else {
+            return
+        }
+        terminate(pid: target.pid, force: force)
+    }
+
     func terminate(pid: Int32, force: Bool = false) {
         // PID 可能已被系统复用：只处理当前快照里仍存在的进程
         guard processes.contains(where: { $0.pid == pid }) else { return }
