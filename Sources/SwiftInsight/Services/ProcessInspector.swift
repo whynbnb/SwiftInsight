@@ -35,7 +35,7 @@ enum ProcessInspector {
         )
         guard filled > 0 else { return [] }
 
-        let actual = Int(filled) / MemoryLayout<proc_fdinfo>.stride
+        let actual = min(Int(filled) / MemoryLayout<proc_fdinfo>.stride, buffer.count)
         var result: [ProcessOpenFile] = []
         result.reserveCapacity(min(actual, 200))
         // 复用路径缓冲：一次扫描最多 200 个 fd，不必为每个 fd 分配 2KB

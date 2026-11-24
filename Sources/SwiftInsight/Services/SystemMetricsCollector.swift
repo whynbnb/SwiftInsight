@@ -357,8 +357,11 @@ enum SystemMetricsCollector {
         if let prev = previousNet {
             let dt = now - prev.time
             if dt > 0.05 {
-                metrics.networkInBytesPerSec = Double(inBytes &- prev.inBytes) / dt
-                metrics.networkOutBytesPerSec = Double(outBytes &- prev.outBytes) / dt
+                // 接口重启时计数器可能归零，不能按无符号回绕计算成巨大速率
+                let inDelta = inBytes >= prev.inBytes ? inBytes - prev.inBytes : 0
+                let outDelta = outBytes >= prev.outBytes ? outBytes - prev.outBytes : 0
+                metrics.networkInBytesPerSec = Double(inDelta) / dt
+                metrics.networkOutBytesPerSec = Double(outDelta) / dt
             }
         }
         previousNet = (inBytes, outBytes, now)
@@ -386,8 +389,10 @@ enum SystemMetricsCollector {
         if let prev = previousDisk {
             let dt = now - prev.time
             if dt > 0.05 {
-                metrics.diskReadBytesPerSec = Double(read &- prev.read) / dt
-                metrics.diskWriteBytesPerSec = Double(write &- prev.write) / dt
+                let readDelta = read >= prev.read ? read - prev.read : 0
+                let writeDelta = write >= prev.write ? write - prev.write : 0
+                metrics.diskReadBytesPerSec = Double(readDelta) / dt
+                metrics.diskWriteBytesPerSec = Double(writeDelta) / dt
             }
         }
         previousDisk = (read, write, now)

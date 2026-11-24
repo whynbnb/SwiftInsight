@@ -235,8 +235,11 @@ final class ProcessMonitor: ObservableObject {
         recomputeGroupCounts()
     }
 
-    /// 选择自定义分组（nil = 取消）；与内置分类互斥
+    /// 选择自定义分组（nil = 取消）；与内置分类互斥。隐藏分组不可被选中
     func selectGroup(_ id: UUID?) {
+        if let id, ProcessGroupStore.shared.group(with: id)?.isHidden == true {
+            return
+        }
         if id != nil {
             categoryFilter = nil
             // 分组已经界定了成员范围，避免旧的范围筛选把组内进程藏起来
@@ -298,8 +301,10 @@ final class ProcessMonitor: ObservableObject {
         let ascending = d.bool(forKey: Self.viewSortAscendingKey)
         let groupRaw = d.string(forKey: Self.viewGroupKey)
 
-        if let catRaw, catRaw != ProcessCategory.unknown.rawValue {
-            categoryFilter = ProcessCategory(rawValue: catRaw)
+        if let catRaw, catRaw != ProcessCategory.unknown.rawValue,
+           let category = ProcessCategory(rawValue: catRaw),
+           !AppPreferences.shared.isCategoryHidden(CategoryFilterItem.from(category: category)) {
+            categoryFilter = category
         }
         if let scopeRaw, let scope = ProcessScope(rawValue: scopeRaw) {
             processScope = scope
@@ -314,7 +319,8 @@ final class ProcessMonitor: ObservableObject {
             sortAscending = ascending
         }
         if let groupRaw, let id = UUID(uuidString: groupRaw),
-           ProcessGroupStore.shared.groups.contains(where: { $0.id == id }) {
+           let group = ProcessGroupStore.shared.groups.first(where: { $0.id == id }),
+           !group.isHidden {
             // 分组筛选优先：清除内置分类，避免两者叠加导致组内进程被藏起来
             groupFilterID = id
             categoryFilter = nil
@@ -376,11 +382,14 @@ final class ProcessMonitor: ObservableObject {
             if !isRefreshPaused {
                 refreshFull()
             }
-        } else if menuBarPanelVisible {
-            refreshPanel()
         } else {
+            // 主窗口关闭后不再保留进程级数据（面板只需 summary / Top）
             releaseHeavySampleData()
-            refreshIconMetrics()
+            if menuBarPanelVisible {
+                refreshPanel()
+            } else {
+                refreshIconMetrics()
+            }
         }
     }
 
@@ -801,6 +810,11 @@ final class ProcessMonitor: ObservableObject {
 
     /// 图标轨：只在 1% 分桶变化时发布，避免隐藏主窗口 SwiftUI 空转
     private func applyIconSnapshot(_ snapshot: ProcessSampler.Snapshot) {
+        // 采样期间窗口 / 面板可能已打开：丢弃过期的轻量快照，避免覆盖全量指标
+        guard !mainWindowVisible, !menuBarPanelVisible else {
+            finishSample()
+            return
+        }
         let cpu = Int(snapshot.systemMetrics.cpuUsed.rounded())
         let mem = Int(snapshot.systemMetrics.memoryUsedPercent.rounded())
         if cpu == lastIconCPUBucket, mem == lastIconMemBucket {
@@ -816,6 +830,11 @@ final class ProcessMonitor: ObservableObject {
 
     /// 面板轨：系统指标 + 菜单栏 Top（不写 processes，避免隐藏主窗口列表重绘）
     private func applyPanelSnapshot(_ snapshot: ProcessSampler.Snapshot) {
+        // 面板在采样期间已关闭：丢弃，避免重新写回已释放的数据
+        guard menuBarPanelVisible else {
+            finishSample()
+            return
+        }
         previousCPU = snapshot.previousCPU
         classificationCache = snapshot.classificationCache
         let liveUIDs = Set(snapshot.processes.map(\.uid))
@@ -831,6 +850,11 @@ final class ProcessMonitor: ObservableObject {
 
     /// 主窗口全量
     private func applyFullSnapshot(_ snapshot: ProcessSampler.Snapshot) {
+        // 采样期间主窗口已关闭：丢弃结果，避免把刚释放的进程快照又写回来
+        guard mainWindowVisible else {
+            finishSample()
+            return
+        }
         previousCPU = snapshot.previousCPU
         classificationCache = snapshot.classificationCache
         let liveUIDs = Set(snapshot.processes.map(\.uid))
@@ -1055,7 +1079,7 @@ private enum ProcessSampler {
             )
         }
 
-        let pidCount = Int(count) / MemoryLayout<Int32>.size
+        let pidCount = min(Int(count) / MemoryLayout<Int32>.size, pids.count)
         var result: [MonitoredProcess] = []
         result.reserveCapacity(pidCount)
         var newSummary = ResourceSummary()
