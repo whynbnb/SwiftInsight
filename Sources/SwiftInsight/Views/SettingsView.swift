@@ -144,7 +144,10 @@ struct SettingsView: View {
     }
 
     private var groupsTab: some View {
-        List {
+        // 这里不能用 List：macOS 26/27 的 List 会把吸顶分组头放在 scroll pocket 里，
+        // 切换 / 重新显示标签页时可能残留一段滚动态偏移，标题下出现整屏空白。
+        // 其它标签页都用 Form，分组页保持一致即可避免该问题。
+        Form {
             Section {
                 ForEach([CategoryFilterItem.appleSystem, .appleApp, .thirdParty], id: \.self) { item in
                     HStack(spacing: 8) {
@@ -185,7 +188,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .listStyle(.inset)
+        .formStyle(.grouped)
         .sheet(item: $editingGroup) { group in
             GroupEditorSheet(context: .edit(group)) { saved in
                 groupStore.update(saved)
