@@ -815,7 +815,10 @@ final class ProcessMonitor: ObservableObject {
         systemMetrics = snapshot.systemMetrics
         rankings = Self.buildRankings(from: snapshot.processes)
         lastProcessSample = snapshot.processes
-        publishMenuBarTops(from: snapshot.processes)
+        // 面板未展开时无需维护菜单栏 Top；打开面板时会用最近快照即时重建
+        if menuBarPanelVisible {
+            publishMenuBarTops(from: snapshot.processes)
+        }
 
         historyStore.record(
             system: snapshot.systemMetrics,

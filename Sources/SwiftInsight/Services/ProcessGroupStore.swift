@@ -111,8 +111,18 @@ final class ProcessGroupStore: ObservableObject {
         BuiltinRuleCatalog.rules + savedRules
     }
 
+    /// 匹配器只需要规则内容，内置规则名称无需本地化。
+    /// 缓存后避免每次刷新都重建「本地化内置规则 + 字典」。
+    private var cachedSavedRulesByID: [UUID: SavedGroupRule]?
+
     var savedRulesByID: [UUID: SavedGroupRule] {
-        Dictionary(uniqueKeysWithValues: allRules.map { ($0.id, $0) })
+        if let cached = cachedSavedRulesByID { return cached }
+        var map = BuiltinRuleCatalog.matchingRulesByID
+        for rule in savedRules {
+            map[rule.id] = rule
+        }
+        cachedSavedRulesByID = map
+        return map
     }
 
     /// 有多少个分组引用了这条规则
@@ -126,6 +136,7 @@ final class ProcessGroupStore: ObservableObject {
     func addSavedRule(_ rule: SavedGroupRule) -> UUID {
         let copy = normalizedSavedRule(rule)
         savedRules.append(copy)
+        cachedSavedRulesByID = nil
         persistSavedRules()
         return copy.id
     }
@@ -134,12 +145,14 @@ final class ProcessGroupStore: ObservableObject {
         guard !rule.isBuiltin,
               let index = savedRules.firstIndex(where: { $0.id == rule.id }) else { return }
         savedRules[index] = normalizedSavedRule(rule)
+        cachedSavedRulesByID = nil
         persistSavedRules()
     }
 
     func removeSavedRule(id: UUID) {
         guard !BuiltinRuleCatalog.matchingRulesByID.keys.contains(id) else { return }
         savedRules.removeAll { $0.id == id }
+        cachedSavedRulesByID = nil
         persistSavedRules()
     }
 
@@ -178,6 +191,7 @@ final class ProcessGroupStore: ObservableObject {
     }
 
     private func loadSavedRules() {
+        cachedSavedRulesByID = nil
         guard let data = UserDefaults.standard.data(forKey: Self.savedRulesKey),
               let decoded = try? JSONDecoder().decode([SavedGroupRule].self, from: data) else {
             savedRules = []

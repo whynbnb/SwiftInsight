@@ -277,13 +277,10 @@ enum ProcessGroupMatcher {
         case .pathEmpty:
             return context.path.isEmpty
         case .appleBundleID:
-            let ids = [
-                context.bundleIdentifier,
-                context.bundleIdentifier.map(ProcessAggregator.familyBundleID),
-            ].compactMap { $0?.lowercased() }
-            return ids.contains {
-                $0.hasPrefix("com.apple.") || $0 == "com.apple" || $0.hasPrefix("edu.mit.kerberos")
-            }
+            guard let bid = context.bundleIdentifier else { return false }
+            if isAppleBundleID(bid) { return true }
+            let family = ProcessAggregator.familyBundleID(bid)
+            return family != bid && isAppleBundleID(family)
         case .systemPath:
             return ProcessClassifier.isSystemPath(context.path)
         case .appleAppPath:
@@ -305,6 +302,13 @@ enum ProcessGroupMatcher {
         }
     }
 
+    private static func isAppleBundleID(_ id: String) -> Bool {
+        let lower = id.lowercased()
+        return lower.hasPrefix("com.apple.")
+            || lower == "com.apple"
+            || lower.hasPrefix("edu.mit.kerberos")
+    }
+
     private static func valueMatches(
         _ context: ProcessRuleContext,
         kind: GroupRuleKind,
@@ -312,24 +316,20 @@ enum ProcessGroupMatcher {
     ) -> Bool {
         switch kind {
         case .bundlePattern:
-            var ids: [String] = []
-            if let bid = context.bundleIdentifier, !bid.isEmpty {
-                ids.append(bid.lowercased())
-                ids.append(ProcessAggregator.familyBundleID(bid).lowercased())
-            }
-            return ids.contains { wildcardMatch(pattern: value, text: $0) }
+            guard let bid = context.bundleIdentifier, !bid.isEmpty else { return false }
+            let lower = bid.lowercased()
+            if wildcardMatch(pattern: value, text: lower) { return true }
+            let family = ProcessAggregator.familyBundleID(bid).lowercased()
+            return family != lower && wildcardMatch(pattern: value, text: family)
         case .namePattern:
-            let names = [
-                context.name.lowercased(),
-                ProcessAggregator.familyName(context.name).lowercased(),
-            ]
-            return names.contains { wildcardMatch(pattern: value, text: $0) }
+            let name = context.name.lowercased()
+            if wildcardMatch(pattern: value, text: name) { return true }
+            let family = ProcessAggregator.familyName(context.name).lowercased()
+            return family != name && wildcardMatch(pattern: value, text: family)
         case .bundlePrefix:
-            let ids = [
-                context.bundleIdentifier,
-                context.bundleIdentifier.map(ProcessAggregator.familyBundleID),
-            ].compactMap { $0?.lowercased() }
-            return ids.contains { $0.hasPrefix(value) }
+            guard let bid = context.bundleIdentifier else { return false }
+            if bid.lowercased().hasPrefix(value) { return true }
+            return ProcessAggregator.familyBundleID(bid).lowercased().hasPrefix(value)
         case .nameContains:
             return context.name.lowercased().contains(value)
         case .pathContains:

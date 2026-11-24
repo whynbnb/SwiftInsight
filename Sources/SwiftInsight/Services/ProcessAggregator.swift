@@ -311,26 +311,30 @@ enum ProcessAggregator {
 
     static func appBundlePath(from path: String, outermost: Bool = false) -> String? {
         guard !path.isEmpty else { return nil }
-        let parts = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        // 直接用 Substring 数组，避免为每个路径组件创建 String
+        let parts = path.split(separator: "/", omittingEmptySubsequences: false)
         let idx: Int?
         if outermost {
-            idx = parts.firstIndex(where: { $0.hasSuffix(".app") })
+            idx = parts.firstIndex { $0.hasSuffix(".app") }
         } else {
-            idx = parts.lastIndex(where: { $0.hasSuffix(".app") })
+            idx = parts.lastIndex { $0.hasSuffix(".app") }
         }
         guard let idx else { return nil }
         return parts[...idx].joined(separator: "/")
     }
 
+    private static let familyDropSuffixes: Set<String> = [
+        "helper", "helpers", "renderer", "gpu", "plugin", "webcontent",
+        "networking", "gpuService", "xpc", "loginhelper", "nativemessaging",
+        "alerter", "crashpad", "service", "agent", "extension", "appex",
+        "webkit", "webapp", "npapi", "ppapi",
+    ]
+
     static func familyBundleID(_ bid: String) -> String {
-        var parts = bid.split(separator: ".").map(String.init)
-        let dropSuffixes: Set<String> = [
-            "helper", "helpers", "renderer", "gpu", "plugin", "webcontent",
-            "networking", "gpuService", "xpc", "loginhelper", "nativemessaging",
-            "alerter", "crashpad", "service", "agent", "extension", "appex",
-            "webkit", "webapp", "npapi", "ppapi",
-        ]
-        while let last = parts.last?.lowercased(), dropSuffixes.contains(last) || last.hasPrefix("helper") {
+        var parts = bid.split(separator: ".")
+        while let last = parts.last {
+            let lower = last.lowercased()
+            guard familyDropSuffixes.contains(lower) || lower.hasPrefix("helper") else { break }
             parts.removeLast()
         }
         // com.microsoft.edgemac.helper → com.microsoft.edgemac
@@ -340,16 +344,17 @@ enum ProcessAggregator {
         return bid
     }
 
+    private static let familyNameSuffixes = [
+        " Helper (Renderer)", " Helper (GPU)", " Helper (Plugin)",
+        " Helper (Service)", " Helper", " Renderer", " GPU Process",
+        " Networking", " WebContent", " Web App", " Crashpad Handler",
+        " NPAPI Plugin", " Plugin", " Agent", " Service", " (GPU)",
+        " (Renderer)", " (Plugin)",
+    ]
+
     static func familyName(_ name: String) -> String {
         var n = name
-        let suffixes = [
-            " Helper (Renderer)", " Helper (GPU)", " Helper (Plugin)",
-            " Helper (Service)", " Helper", " Renderer", " GPU Process",
-            " Networking", " WebContent", " Web App", " Crashpad Handler",
-            " NPAPI Plugin", " Plugin", " Agent", " Service", " (GPU)",
-            " (Renderer)", " (Plugin)",
-        ]
-        for s in suffixes {
+        for s in familyNameSuffixes {
             if let r = n.range(of: s, options: [.caseInsensitive, .backwards]) {
                 n = String(n[..<r.lowerBound])
                 break
@@ -373,14 +378,13 @@ enum ProcessAggregator {
 
     private static func executableFamilyRoot(path: String, name: String, outermost: Bool) -> String? {
         guard !path.isEmpty else { return nil }
-        let url = URL(fileURLWithPath: path)
-        let dir = url.deletingLastPathComponent()
         // .../App.app/Contents/Frameworks/App Helper.app/Contents/MacOS → climb to .app
         if let app = appBundlePath(from: path, outermost: outermost) {
             return app
         }
         // Tauri / sidecar: same directory family
-        let parent = dir.path
+        guard let slash = path.lastIndex(of: "/") else { return nil }
+        let parent = String(path[..<slash])
         if parent.contains("Frameworks") || parent.contains("Helpers") {
             return appBundlePath(from: parent, outermost: outermost) ?? parent
         }

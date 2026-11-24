@@ -940,8 +940,9 @@ enum ProcessClassifier {
         return image
     }
 
-    /// 生成固定尺寸的小图标，释放 NSWorkspace 原图的高分辨率表示
-    private static func downscaledIcon(_ source: NSImage, pixelSize: Int) -> NSImage {
+    /// 生成固定尺寸的小图标，释放 NSWorkspace 原图的高分辨率表示。
+    /// 其他界面（菜单栏面板等）也可复用，避免各自持有 1024px 级图标。
+    static func downscaledIcon(_ source: NSImage, pixelSize: Int) -> NSImage {
         // NSImage 绘制必须在主线程；非主线程调用时退回原图，避免未定义行为
         guard Thread.isMainThread else { return source }
         guard pixelSize > 0,

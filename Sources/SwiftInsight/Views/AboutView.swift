@@ -106,7 +106,21 @@ enum AppInfo {
         Bundle.main.bundleIdentifier ?? "me.whynbnb.SwiftInsight"
     }
 
+    private static var cachedIcon: NSImage?
+
     static var icon: NSImage {
+        if let cachedIcon { return cachedIcon }
+        let resolved = resolveIcon()
+        // About 只显示 96pt：保留 192px 表示即可，避免常驻 1024px 原图
+        let maxPixels = resolved.representations.map(\.pixelsWide).max() ?? 0
+        let image = maxPixels > 192
+            ? ProcessClassifier.downscaledIcon(resolved, pixelSize: 192)
+            : resolved
+        cachedIcon = image
+        return image
+    }
+
+    private static func resolveIcon() -> NSImage {
         // 优先从 AppIcon 资源读取，避免 NSApp.applicationIconImage 在开发时变成通用文件夹图标
         if let img = loadAppIconFromBundle() {
             return img

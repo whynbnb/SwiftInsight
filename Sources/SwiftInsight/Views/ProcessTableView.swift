@@ -270,7 +270,6 @@ private struct ProcessNSTable: NSViewRepresentable {
         private var rows: [ProcessDisplayRow] = []
         private var isApplying = false
         private var lastSortIndicatorState = ""
-        private var iconCache: [String: NSImage] = [:]
 
         /// 恢复用户上次调整的列宽（受「记住界面状态」控制）
         static func savedColumnWidths() -> [String: Double] {
@@ -596,18 +595,8 @@ private struct ProcessNSTable: NSViewRepresentable {
         }
 
         private func icon(for process: MonitoredProcess) -> NSImage {
-            let key = process.path.isEmpty ? process.name : process.path
-            if let cached = iconCache[key] { return cached }
-            // ProcessClassifier 已有全局 NSCache；此处只做本表视图热缓存
-            let image = ProcessClassifier.icon(for: process.path, name: process.name)
-            image.size = NSSize(width: 16, height: 16)
-            iconCache[key] = image
-            if iconCache.count > 256 {
-                // 淘汰约一半，避免一次性清空导致图标 thrash
-                let drop = iconCache.keys.prefix(iconCache.count / 2)
-                for k in drop { iconCache.removeValue(forKey: k) }
-            }
-            return image
+            // ProcessClassifier 已按路径做 NSCache，这里不再维护第二份缓存
+            ProcessClassifier.icon(for: process.path, name: process.name)
         }
 
         private func cpuColor(_ cpu: Double) -> NSColor {

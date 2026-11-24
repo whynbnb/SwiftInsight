@@ -253,6 +253,8 @@ final class MenuBarController: NSObject, ObservableObject {
             if !monitor.mainWindowVisible {
                 monitor.refreshPanel()
             } else {
+                // 主窗口轨为了省开销不再常驻构建菜单栏 Top，打开面板时即时补一次
+                monitor.rebuildMenuBarTops()
                 panelContent?.reload(from: monitor)
             }
         }
@@ -1712,14 +1714,18 @@ private enum AppIconLoader {
         let workspace = NSWorkspace.shared
         for id in bundleIDs {
             if let url = workspace.urlForApplication(withBundleIdentifier: id) {
-                let icon = workspace.icon(forFile: url.path)
-                icon.size = NSSize(width: 32, height: 32)
+                let icon = ProcessClassifier.downscaledIcon(
+                    workspace.icon(forFile: url.path),
+                    pixelSize: 64
+                )
                 return Result(image: icon, isAppIcon: true)
             }
         }
         for path in paths where FileManager.default.fileExists(atPath: path) {
-            let icon = workspace.icon(forFile: path)
-            icon.size = NSSize(width: 32, height: 32)
+            let icon = ProcessClassifier.downscaledIcon(
+                workspace.icon(forFile: path),
+                pixelSize: 64
+            )
             return Result(image: icon, isAppIcon: true)
         }
         let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
