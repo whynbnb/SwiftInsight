@@ -71,7 +71,9 @@ final class ProcessGroupStore: ObservableObject {
         var group = groups[index]
         if group.isDynamic {
             let rule = ProcessGroupMatcher.rule(for: process)
-            if group.condition.isRule {
+            // 根节点是单条规则或分组引用时，先包一层条件组再追加，
+            // 否则往 groupRef 节点里 append 子节点会被求值逻辑忽略。
+            if group.condition.isRule || group.condition.isGroupReference {
                 group.condition = GroupConditionNode(children: [group.condition])
             }
             let exists = group.condition.leafRules.contains {

@@ -74,6 +74,26 @@ struct GroupRule: Identifiable, Codable, Hashable {
     var id = UUID()
     var kind: GroupRuleKind = .bundlePattern
     var value: String = ""
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case kind
+        case value
+    }
+
+    init(id: UUID = UUID(), kind: GroupRuleKind = .bundlePattern, value: String = "") {
+        self.id = id
+        self.kind = kind
+        self.value = value
+    }
+
+    /// 旧数据可能缺少新增字段，用默认值容错，避免整份分组数据解码失败
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        kind = try container.decodeIfPresent(GroupRuleKind.self, forKey: .kind) ?? .bundlePattern
+        value = try container.decodeIfPresent(String.self, forKey: .value) ?? ""
+    }
 }
 
 /// 规则库条目的内容类型
@@ -223,6 +243,29 @@ struct GroupConditionNode: Identifiable, Codable, Hashable {
         self.combinator = combinator
         self.isNegated = isNegated
         self.children = children
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case rule
+        case ruleRef
+        case groupRef
+        case combinator
+        case isNegated
+        case children
+    }
+
+    /// 旧版本保存的条件节点可能没有 groupRef / isNegated 等字段，
+    /// 全部按默认值容错，避免升级后整份分组数据解码失败。
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        rule = try container.decodeIfPresent(GroupRule.self, forKey: .rule)
+        ruleRef = try container.decodeIfPresent(UUID.self, forKey: .ruleRef)
+        groupRef = try container.decodeIfPresent(UUID.self, forKey: .groupRef)
+        combinator = try container.decodeIfPresent(GroupCombinator.self, forKey: .combinator) ?? .any
+        isNegated = try container.decodeIfPresent(Bool.self, forKey: .isNegated) ?? false
+        children = try container.decodeIfPresent([GroupConditionNode].self, forKey: .children) ?? []
     }
 
     /// 树中所有直接填写的规则叶子（用于去重等，不含规则库引用）

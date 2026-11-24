@@ -54,7 +54,10 @@ enum ProcessGroupMatcher {
         processes: [MonitoredProcess],
         savedRules: [UUID: SavedGroupRule] = [:]
     ) -> [UUID: Set<Int32>] {
-        let groupsByID = Dictionary(uniqueKeysWithValues: groups.map { ($0.id, $0) })
+        let groupsByID = Dictionary(
+            groups.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         var memberships: [UUID: Set<Int32>] = [:]
         var visiting: Set<UUID> = []
 
@@ -92,9 +95,8 @@ enum ProcessGroupMatcher {
                 direct.insert(process.pid)
             }
 
-            visiting.remove(id)
-
-            // 取反条件视为硬排除：即使目标进程因父进程命中而被展开，也不能重新计入
+            // 计算取反排除期间继续保持 visiting，防止自引用 / 循环引用
+            // 在 isExplicitlyExcluded 里再次递归到当前分组导致栈溢出。
             var excluded: Set<Int32> = []
             if group.isDynamic {
                 for process in processes where isExplicitlyExcluded(
@@ -110,6 +112,7 @@ enum ProcessGroupMatcher {
             let result = expand(direct, includeChildren: group.includeChildren)
                 .subtracting(excluded)
             memberships[id] = result
+            visiting.remove(id)
             return result
         }
 
@@ -232,6 +235,9 @@ enum ProcessGroupMatcher {
                 groupMembership: groupMembership
             )
         }
+        // 只有「全部」组合下的取反子条件才代表排除。
+        // 「任一」里的取反是正向包含（例如 A OR NOT B），不能全局硬排除。
+        guard node.combinator == .all else { return false }
         for child in node.children {
             if isExplicitlyExcluded(
                 child,
