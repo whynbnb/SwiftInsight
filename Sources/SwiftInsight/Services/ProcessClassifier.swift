@@ -22,6 +22,9 @@ enum ProcessClassifier {
         "/Library/DriverExtensions/",
     ]
 
+    /// 系统自带的用户 App 目录：不算「系统路径」，归入 Apple 应用
+    private static let systemApplicationsPrefix = "/System/Applications/"
+
     private static let appleAppPathPrefixes: [String] = [
         "/System/Applications/",
         "/System/Library/CoreServices/",
@@ -739,6 +742,10 @@ enum ProcessClassifier {
     /// 是否为系统路径（规则库「系统路径」内置规则）
     static func isSystemPath(_ path: String) -> Bool {
         guard !path.isEmpty else { return false }
+        // /System/Applications 是随系统附带、可独立退出的用户 App（Terminal、邮件、备忘录…），
+        // 归入「Apple 应用」；CoreServices 里的 Finder / Dock / 控制中心等
+        // 界面基础设施仍然算系统。
+        if path.hasPrefix(systemApplicationsPrefix) { return false }
         return systemPathPrefixes.contains { path.hasPrefix($0) }
     }
 
