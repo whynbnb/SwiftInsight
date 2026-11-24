@@ -650,43 +650,69 @@ final class ProcessMonitor: ObservableObject {
             if matched.isEmpty {
                 list = []
             } else {
-                let keys = Set(matched.map { ProcessAggregator.groupKey(for: $0, all: Dictionary(uniqueKeysWithValues: processes.map { ($0.pid, $0) }), outermostApp: outermostApp) })
-                let byPID = Dictionary(uniqueKeysWithValues: processes.map { ($0.pid, $0) })
-                list = list.filter { keys.contains(ProcessAggregator.groupKey(for: $0, all: byPID, outermostApp: outermostApp)) }
+                // 先构建一次索引；之前每次 map 都重新构建整张表，搜索时会非常慢
+                let byPID = Dictionary(
+                    processes.map { ($0.pid, $0) },
+                    uniquingKeysWith: { first, _ in first }
+                )
+                let keys = Set(matched.map {
+                    ProcessAggregator.groupKey(for: $0, all: byPID, outermostApp: outermostApp)
+                })
+                list = list.filter {
+                    keys.contains(ProcessAggregator.groupKey(for: $0, all: byPID, outermostApp: outermostApp))
+                }
             }
         }
         return list
     }
 
     private static func sortProcesses(_ list: [MonitoredProcess], column: SortColumn, ascending: Bool) -> [MonitoredProcess] {
+        // 相等时按 PID 稳定排序，且不要用 !result 表示降序：
+        // 相等元素不能同时「小于」彼此，否则违反 sorted(by:) 的严格弱序要求。
         list.sorted { a, b in
-            let result: Bool
             switch column {
-            case .cpu:     result = a.cpuPercent < b.cpuPercent
-            case .memory:  result = a.memoryBytes < b.memoryBytes
-            case .name:    result = a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
-            case .pid:     result = a.pid < b.pid
-            case .threads: result = a.threadCount < b.threadCount
+            case .cpu:
+                if a.cpuPercent == b.cpuPercent { return a.pid < b.pid }
+                return ascending ? a.cpuPercent < b.cpuPercent : a.cpuPercent > b.cpuPercent
+            case .memory:
+                if a.memoryBytes == b.memoryBytes { return a.pid < b.pid }
+                return ascending ? a.memoryBytes < b.memoryBytes : a.memoryBytes > b.memoryBytes
+            case .name:
+                let cmp = a.name.localizedCaseInsensitiveCompare(b.name)
+                if cmp == .orderedSame { return a.pid < b.pid }
+                return ascending ? cmp == .orderedAscending : cmp == .orderedDescending
+            case .pid:
+                return ascending ? a.pid < b.pid : a.pid > b.pid
+            case .threads:
+                if a.threadCount == b.threadCount { return a.pid < b.pid }
+                return ascending ? a.threadCount < b.threadCount : a.threadCount > b.threadCount
             }
-            return ascending ? result : !result
         }
     }
 
     // MARK: - Kill / Sample
 
     func terminate(pid: Int32, force: Bool = false) {
+        // PID 可能已被系统复用：只处理当前快照里仍存在的进程
+        guard processes.contains(where: { $0.pid == pid }) else { return }
         let sig = force ? SIGKILL : SIGTERM
         kill(pid, sig)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.refreshFull()
+            self?.refresh()
         }
     }
 
     // MARK: - Core refresh（三轨：图标 / 面板 / 主窗口）
 
-    /// 工具栏 / 快捷键：完整刷新（主窗口）
+    /// 工具栏 / 快捷键：按当前可见轨道刷新
     func refresh() {
-        refreshFull()
+        if mainWindowVisible {
+            refreshFull()
+        } else if menuBarPanelVisible {
+            refreshPanel()
+        } else {
+            refreshIconMetrics()
+        }
     }
 
     /// 主窗口：全量进程 + 排名 + 历史 + 详情

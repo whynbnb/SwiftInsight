@@ -30,7 +30,10 @@ enum ProcessParentTree {
     static func buildForest(from processes: [MonitoredProcess]) -> [Node] {
         guard !processes.isEmpty else { return [] }
 
-        let byPID = Dictionary(uniqueKeysWithValues: processes.map { ($0.pid, $0) })
+        let byPID = Dictionary(
+            processes.map { ($0.pid, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         let bootstrapPIDs = Set(processes.filter(isBootstrapProcess).map(\.pid))
 
         var childrenMap: [Int32: [MonitoredProcess]] = [:]
@@ -174,16 +177,25 @@ enum ProcessParentTree {
     }
 
     private static func sortNodes(_ nodes: [Node], column: SortColumn, ascending: Bool) -> [Node] {
+        // 相等值按 PID 兜底，保证升/降序都是严格弱序
         nodes.sorted { a, b in
-            let result: Bool
             switch column {
-            case .cpu:     result = a.process.cpuPercent < b.process.cpuPercent
-            case .memory:  result = a.process.memoryBytes < b.process.memoryBytes
-            case .name:    result = a.process.name.localizedCaseInsensitiveCompare(b.process.name) == .orderedAscending
-            case .pid:     result = a.process.pid < b.process.pid
-            case .threads: result = a.process.threadCount < b.process.threadCount
+            case .cpu:
+                if a.process.cpuPercent == b.process.cpuPercent { return a.process.pid < b.process.pid }
+                return ascending ? a.process.cpuPercent < b.process.cpuPercent : a.process.cpuPercent > b.process.cpuPercent
+            case .memory:
+                if a.process.memoryBytes == b.process.memoryBytes { return a.process.pid < b.process.pid }
+                return ascending ? a.process.memoryBytes < b.process.memoryBytes : a.process.memoryBytes > b.process.memoryBytes
+            case .name:
+                let cmp = a.process.name.localizedCaseInsensitiveCompare(b.process.name)
+                if cmp == .orderedSame { return a.process.pid < b.process.pid }
+                return ascending ? cmp == .orderedAscending : cmp == .orderedDescending
+            case .pid:
+                return ascending ? a.process.pid < b.process.pid : a.process.pid > b.process.pid
+            case .threads:
+                if a.process.threadCount == b.process.threadCount { return a.process.pid < b.process.pid }
+                return ascending ? a.process.threadCount < b.process.threadCount : a.process.threadCount > b.process.threadCount
             }
-            return ascending ? result : !result
         }
     }
 }

@@ -31,7 +31,10 @@ enum ProcessAggregator {
     static func buildForest(from processes: [MonitoredProcess], outermostApp: Bool = false) -> [Node] {
         guard !processes.isEmpty else { return [] }
 
-        let byPID = Dictionary(uniqueKeysWithValues: processes.map { ($0.pid, $0) })
+        let byPID = Dictionary(
+            processes.map { ($0.pid, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         var groupOf: [Int32: String] = [:]
         for p in processes {
             groupOf[p.pid] = groupKey(for: p, all: byPID, outermostApp: outermostApp)
@@ -294,16 +297,25 @@ enum ProcessAggregator {
     }
 
     private static func sortNodes(_ nodes: [Node], column: SortColumn, ascending: Bool) -> [Node] {
+        // 相等值按 PID 兜底，避免降序时用 !result 造成非严格弱序
         nodes.sorted { a, b in
-            let result: Bool
             switch column {
-            case .cpu:     result = a.totalCPU < b.totalCPU
-            case .memory:  result = a.totalMemory < b.totalMemory
-            case .name:    result = a.process.name.localizedCaseInsensitiveCompare(b.process.name) == .orderedAscending
-            case .pid:     result = a.process.pid < b.process.pid
-            case .threads: result = a.totalThreads < b.totalThreads
+            case .cpu:
+                if a.totalCPU == b.totalCPU { return a.process.pid < b.process.pid }
+                return ascending ? a.totalCPU < b.totalCPU : a.totalCPU > b.totalCPU
+            case .memory:
+                if a.totalMemory == b.totalMemory { return a.process.pid < b.process.pid }
+                return ascending ? a.totalMemory < b.totalMemory : a.totalMemory > b.totalMemory
+            case .name:
+                let cmp = a.process.name.localizedCaseInsensitiveCompare(b.process.name)
+                if cmp == .orderedSame { return a.process.pid < b.process.pid }
+                return ascending ? cmp == .orderedAscending : cmp == .orderedDescending
+            case .pid:
+                return ascending ? a.process.pid < b.process.pid : a.process.pid > b.process.pid
+            case .threads:
+                if a.totalThreads == b.totalThreads { return a.process.pid < b.process.pid }
+                return ascending ? a.totalThreads < b.totalThreads : a.totalThreads > b.totalThreads
             }
-            return ascending ? result : !result
         }
     }
 
