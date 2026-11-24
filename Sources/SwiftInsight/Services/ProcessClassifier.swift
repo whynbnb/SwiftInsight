@@ -914,8 +914,9 @@ enum ProcessClassifier {
 
     /// 获取应用图标（进程级 NSCache，限制数量与成本）
     ///
-    /// NSWorkspace 返回的图标通常带 1024px 级别的位图表示。列表只显示 16pt，
-    /// 直接缓存原图会让每个 App 常驻数 MB。这里统一缩成 32×32 像素（16pt @2x）。
+    /// NSWorkspace 返回的图标通常带 1024px 级别的位图表示。直接缓存原图会让每个
+    /// App 常驻数 MB。这里统一缩成 64×64 像素（32pt @2x）：
+    /// 列表按 16pt 缩小显示，详情面板按 32pt 显示，两者都清晰。
     static func icon(for path: String, name: String) -> NSImage {
         let cacheKey = (path.isEmpty ? name : path) as NSString
         if let cached = iconCache.object(forKey: cacheKey) {
@@ -935,8 +936,8 @@ enum ProcessClassifier {
             source = NSImage(systemSymbolName: "gearshape", accessibilityDescription: name) ?? NSImage()
         }
 
-        let image = downscaledIcon(source, pixelSize: 32)
-        iconCache.setObject(image, forKey: cacheKey, cost: 32 * 32 * 4)
+        let image = downscaledIcon(source, pixelSize: 64)
+        iconCache.setObject(image, forKey: cacheKey, cost: 64 * 64 * 4)
         return image
     }
 
