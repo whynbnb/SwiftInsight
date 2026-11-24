@@ -248,8 +248,12 @@ final class ProcessMonitor: ObservableObject {
         groupFilterID = id
     }
 
-    /// 选择内置分类（nil = 全部）；选择分类会退出分组筛选
+    /// 选择内置分类（nil = 全部）；选择分类会退出分组筛选。隐藏在侧栏的分类不可被选中
     func selectCategory(_ category: ProcessCategory?) {
+        if let category,
+           AppPreferences.shared.isCategoryHidden(CategoryFilterItem.from(category: category)) {
+            return
+        }
         if category != nil { groupFilterID = nil }
         categoryFilter = category
     }

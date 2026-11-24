@@ -38,12 +38,15 @@ struct SwiftInsightApp: App {
                 Button(L("cmd.only_system")) {
                     AppSession.shared.monitor.selectCategory(.appleSystem)
                 }
+                .disabled(prefs.isCategoryHidden(.appleSystem))
                 Button(L("cmd.only_app")) {
                     AppSession.shared.monitor.selectCategory(.appleApp)
                 }
+                .disabled(prefs.isCategoryHidden(.appleApp))
                 Button(L("cmd.only_third")) {
                     AppSession.shared.monitor.selectCategory(.thirdParty)
                 }
+                .disabled(prefs.isCategoryHidden(.thirdParty))
             }
             CommandMenu(L("cmd.menubar")) {
                 ForEach(MenuBarIconMode.allCases) { mode in

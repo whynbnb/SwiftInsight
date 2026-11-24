@@ -879,10 +879,13 @@ extension ProcessNSTable.Coordinator: NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        let filter = NSMenuItem(title: L("menu.filter_category"), action: #selector(filterCategory(_:)), keyEquivalent: "")
-        filter.target = self
-        filter.representedObject = process.category.rawValue
-        menu.addItem(filter)
+        let categoryItem = CategoryFilterItem.from(category: process.category)
+        if !AppPreferences.shared.isCategoryHidden(categoryItem) {
+            let filter = NSMenuItem(title: L("menu.filter_category"), action: #selector(filterCategory(_:)), keyEquivalent: "")
+            filter.target = self
+            filter.representedObject = process.category.rawValue
+            menu.addItem(filter)
+        }
 
         let groupsItem = NSMenuItem(title: L("menu.groups"), action: nil, keyEquivalent: "")
         let groupMenu = NSMenu()
