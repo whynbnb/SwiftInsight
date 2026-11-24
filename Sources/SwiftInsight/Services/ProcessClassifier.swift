@@ -25,7 +25,6 @@ enum ProcessClassifier {
     private static let appleAppPathPrefixes: [String] = [
         "/System/Applications/",
         "/System/Library/CoreServices/",
-        "/Applications/Utilities/",
         "/Applications/Safari.app",
         "/Applications/Mail.app",
         "/Applications/Messages.app",
@@ -107,6 +106,7 @@ enum ProcessClassifier {
         "/Applications/Wireless Diagnostics.app",
         "/Applications/Crash Reporter.app",
         "/Applications/Feedback Assistant.app",
+        "/Applications/Utilities/Feedback Assistant.app",
         "/Applications/Apple Configurator.app",
         "/Applications/Translocation Removal Tool.app",
         "/Library/Developer/",
@@ -782,8 +782,49 @@ enum ProcessClassifier {
         let parts = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
         guard let appIdx = parts.firstIndex(where: { $0.hasSuffix(".app") }) else { return false }
         // 必须是这一层 .app，且紧随其后就是 Contents/MacOS/<可执行文件>
-        guard appIdx + 4 == parts.count else { return false }
-        return parts[appIdx + 1] == "Contents" && parts[appIdx + 2] == "MacOS"
+        guard appIdx + 4 == parts.count,
+              parts[appIdx + 1] == "Contents",
+              parts[appIdx + 2] == "MacOS",
+              let executable = parts.last else {
+            return false
+        }
+        let appPath = parts[...appIdx].joined(separator: "/")
+        // 以 Info.plist 的 CFBundleExecutable 为准：kitty.app/Contents/MacOS/kitten
+        // 这类辅助二进制不能因为目录形状相同就被当成前台 App。
+        if let mainName = mainExecutableName(forAppPath: appPath) {
+            return executable.caseInsensitiveCompare(mainName) == .orderedSame
+        }
+        // Info.plist 不可读时按 App 名兜底
+        let bundleName = String(parts[appIdx].dropLast(4))
+        return executable.caseInsensitiveCompare(bundleName) == .orderedSame
+    }
+
+    /// 读取 App 的 CFBundleExecutable（按 App 路径缓存，避免每个进程读 Info.plist）
+    private static let mainExecutableCacheLock = NSLock()
+    nonisolated(unsafe) private static var mainExecutableCache: [String: String] = [:]
+
+    private static func mainExecutableName(forAppPath appPath: String) -> String? {
+        mainExecutableCacheLock.lock()
+        if let cached = mainExecutableCache[appPath] {
+            mainExecutableCacheLock.unlock()
+            return cached
+        }
+        mainExecutableCacheLock.unlock()
+
+        let plist = URL(fileURLWithPath: appPath).appendingPathComponent("Contents/Info.plist")
+        guard let dict = NSDictionary(contentsOf: plist) as? [String: Any],
+              let name = dict["CFBundleExecutable"] as? String,
+              !name.isEmpty else {
+            return nil
+        }
+
+        mainExecutableCacheLock.lock()
+        if mainExecutableCache.count >= 256 {
+            mainExecutableCache.removeAll(keepingCapacity: true)
+        }
+        mainExecutableCache[appPath] = name
+        mainExecutableCacheLock.unlock()
+        return name
     }
 
     /// 以当前可执行文件为 `Contents/MacOS/<binary>` 的最近一层 `.app` 路径。
@@ -830,10 +871,10 @@ enum ProcessClassifier {
         }
         if lower.contains("/launchdaemons/") || lower.contains("/launchagents/") ||
             lower.hasPrefix("/usr/libexec/") || lower.hasPrefix("/usr/sbin/") ||
-            lower.hasPrefix("/System/Library/CoreServices/") && !lower.hasSuffix(".app/contents/macos/" + name.lowercased()) {
-            // CoreServices 里既有 app 也有 daemon
+            lower.hasPrefix("/system/library/coreservices/") && !lower.hasSuffix(".app/contents/macos/" + name.lowercased()) {
+            // CoreServices 里既有 app 也有 daemon / 辅助二进制
             if path.hasSuffix(".app") || path.contains(".app/") {
-                return .app
+                return isMainAppExecutable(path: path) ? .app : .helper
             }
             return .daemon
         }
